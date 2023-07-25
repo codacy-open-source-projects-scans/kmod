@@ -58,7 +58,7 @@ struct kmod_file {
 	gzFile gzf;
 #endif
 	int fd;
-	bool direct;
+	enum kmod_file_compression_type compression;
 	off_t size;
 	void *memory;
 	const struct file_ops *ops;
@@ -376,19 +376,20 @@ static const char magic_zlib[] = {0x1f, 0x8b};
 
 static const struct comp_type {
 	size_t magic_size;
+	enum kmod_file_compression_type compression;
 	const char *magic_bytes;
 	const struct file_ops ops;
 } comp_types[] = {
 #ifdef ENABLE_ZSTD
-	{sizeof(magic_zstd), magic_zstd, {load_zstd, unload_zstd}},
+	{sizeof(magic_zstd),	KMOD_FILE_COMPRESSION_ZSTD, magic_zstd, {load_zstd, unload_zstd}},
 #endif
 #ifdef ENABLE_XZ
-	{sizeof(magic_xz), magic_xz, {load_xz, unload_xz}},
+	{sizeof(magic_xz),	KMOD_FILE_COMPRESSION_XZ, magic_xz, {load_xz, unload_xz}},
 #endif
 #ifdef ENABLE_ZLIB
-	{sizeof(magic_zlib), magic_zlib, {load_zlib, unload_zlib}},
+	{sizeof(magic_zlib),	KMOD_FILE_COMPRESSION_ZLIB, magic_zlib, {load_zlib, unload_zlib}},
 #endif
-	{0, NULL, {NULL, NULL}}
+	{0,			KMOD_FILE_COMPRESSION_NONE, NULL, {NULL, NULL}}
 };
 
 static int load_reg(struct kmod_file *file)
@@ -403,7 +404,7 @@ static int load_reg(struct kmod_file *file)
 			    file->fd, 0);
 	if (file->memory == MAP_FAILED)
 		return -errno;
-	file->direct = true;
+
 	return 0;
 }
 
@@ -421,6 +422,7 @@ struct kmod_elf *kmod_file_get_elf(struct kmod_file *file)
 	if (file->elf)
 		return file->elf;
 
+	kmod_file_load_contents(file);
 	file->elf = kmod_elf_new(file->memory, file->size);
 	return file->elf;
 }
@@ -431,7 +433,7 @@ struct kmod_file *kmod_file_open(const struct kmod_ctx *ctx,
 	struct kmod_file *file = calloc(1, sizeof(struct kmod_file));
 	const struct comp_type *itr;
 	size_t magic_size_max = 0;
-	int err;
+	int err = 0;
 
 	if (file == NULL)
 		return NULL;
@@ -447,7 +449,6 @@ struct kmod_file *kmod_file_open(const struct kmod_ctx *ctx,
 			magic_size_max = itr->magic_size;
 	}
 
-	file->direct = false;
 	if (magic_size_max > 0) {
 		char *buf = alloca(magic_size_max + 1);
 		ssize_t sz;
@@ -467,18 +468,21 @@ struct kmod_file *kmod_file_open(const struct kmod_ctx *ctx,
 		}
 
 		for (itr = comp_types; itr->ops.load != NULL; itr++) {
-			if (memcmp(buf, itr->magic_bytes, itr->magic_size) == 0)
+			if (memcmp(buf, itr->magic_bytes, itr->magic_size) == 0) {
+				file->ops = &itr->ops;
+				file->compression = itr->compression;
 				break;
+			}
 		}
-		if (itr->ops.load != NULL)
-			file->ops = &itr->ops;
 	}
 
-	if (file->ops == NULL)
+	if (file->ops == NULL) {
 		file->ops = &reg_ops;
+		file->compression = KMOD_FILE_COMPRESSION_NONE;
+	}
 
-	err = file->ops->load(file);
 	file->ctx = ctx;
+
 error:
 	if (err < 0) {
 		if (file->fd >= 0)
@@ -491,6 +495,18 @@ error:
 	return file;
 }
 
+/*
+ *  Callers should just check file->memory got updated
+ */
+void kmod_file_load_contents(struct kmod_file *file)
+{
+	if (file->memory)
+		return;
+
+	/*  The load functions already log possible errors. */
+	file->ops->load(file);
+}
+
 void *kmod_file_get_contents(const struct kmod_file *file)
 {
 	return file->memory;
@@ -501,9 +517,9 @@ off_t kmod_file_get_size(const struct kmod_file *file)
 	return file->size;
 }
 
-bool kmod_file_get_direct(const struct kmod_file *file)
+enum kmod_file_compression_type kmod_file_get_compression(const struct kmod_file *file)
 {
-	return file->direct;
+	return file->compression;
 }
 
 int kmod_file_get_fd(const struct kmod_file *file)
@@ -516,7 +532,9 @@ void kmod_file_unref(struct kmod_file *file)
 	if (file->elf)
 		kmod_elf_unref(file->elf);
 
-	file->ops->unload(file);
+	if (file->memory)
+		file->ops->unload(file);
+
 	if (file->fd >= 0)
 		close(file->fd);
 	free(file);
