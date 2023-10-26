@@ -1,6 +1,6 @@
 AC_PREREQ(2.64)
 AC_INIT([kmod],
-	[30],
+	[31],
 	[linux-modules@vger.kernel.org],
 	[kmod],
 	[http://git.kernel.org/?p=utils/kernel/kmod/kmod.git])
@@ -20,6 +20,9 @@ LT_INIT([disable-static pic-only])
 
 AS_IF([test "x$enable_static" = "xyes"], [AC_MSG_ERROR([--enable-static is not supported by kmod])])
 AS_IF([test "x$enable_largefile" = "xno"], [AC_MSG_ERROR([--disable-largefile is not supported by kmod])])
+
+module_compressions=""
+module_signatures="legacy"
 
 #####################################################################
 # Program checks and configurations
@@ -79,6 +82,10 @@ AC_COMPILE_IFELSE(
 # --with-
 #####################################################################
 
+AC_ARG_WITH([distconfdir], AS_HELP_STRING([--with-distconfdir=DIR], [directory to search for distribution configuration files]),
+        [], [with_distconfdir='${prefix}/lib'])
+AC_SUBST([distconfdir], [$with_distconfdir])
+
 AC_ARG_WITH([rootlibdir],
         AS_HELP_STRING([--with-rootlibdir=DIR], [rootfs directory to install shared libraries]),
         [], [with_rootlibdir=$libdir])
@@ -90,6 +97,7 @@ AC_ARG_WITH([zstd],
 AS_IF([test "x$with_zstd" != "xno"], [
 	PKG_CHECK_MODULES([libzstd], [libzstd >= 1.4.4], [LIBS="$LIBS $libzstd_LIBS"])
 	AC_DEFINE([ENABLE_ZSTD], [1], [Enable Zstandard for modules.])
+	module_compressions="zstd $module_compressions"
 ], [
 	AC_MSG_NOTICE([Zstandard support not requested])
 ])
@@ -101,6 +109,7 @@ AC_ARG_WITH([xz],
 AS_IF([test "x$with_xz" != "xno"], [
 	PKG_CHECK_MODULES([liblzma], [liblzma >= 4.99], [LIBS="$LIBS $liblzma_LIBS"])
 	AC_DEFINE([ENABLE_XZ], [1], [Enable Xz for modules.])
+	module_compressions="xz $module_compressions"
 ], [
 	AC_MSG_NOTICE([Xz support not requested])
 ])
@@ -112,6 +121,7 @@ AC_ARG_WITH([zlib],
 AS_IF([test "x$with_zlib" != "xno"], [
 	PKG_CHECK_MODULES([zlib], [zlib], [LIBS="$LIBS $zlib_LIBS"])
 	AC_DEFINE([ENABLE_ZLIB], [1], [Enable zlib for modules.])
+	module_compressions="gzip $module_compressions"
 ], [
 	AC_MSG_NOTICE([zlib support not requested])
 ])
@@ -123,6 +133,14 @@ AC_ARG_WITH([openssl],
 AS_IF([test "x$with_openssl" != "xno"], [
 	PKG_CHECK_MODULES([libcrypto], [libcrypto >= 1.1.0], [LIBS="$LIBS $libcrypto_LIBS"])
 	AC_DEFINE([ENABLE_OPENSSL], [1], [Enable openssl for modinfo.])
+	AC_COMPILE_IFELSE([AC_LANG_SOURCE([[#include <openssl/ssl.h>
+		int nid = NID_sm3;]])], [
+		AC_MSG_NOTICE([openssl supports sm3])
+	], [
+		AC_MSG_NOTICE([openssl sm3 support not detected])
+		CPPFLAGS="$CPPFLAGS -DOPENSSL_NO_SM3"
+	])
+	module_signatures="PKCS7 $module_signatures"
 ], [
 	AC_MSG_NOTICE([openssl support not requested])
 ])
@@ -287,6 +305,9 @@ AC_DEFINE_UNQUOTED(KMOD_FEATURES, ["$with_features"], [Features in this build])
 # Generate files from *.in
 #####################################################################
 
+AC_SUBST([module_compressions], $module_compressions)
+AC_SUBST([module_signatures], $module_signatures)
+
 AC_CONFIG_FILES([
 	Makefile
 	man/Makefile
@@ -294,6 +315,7 @@ AC_CONFIG_FILES([
 	libkmod/docs/version.xml
 	libkmod/libkmod.pc
 	libkmod/python/kmod/version.py
+	tools/kmod.pc
 ])
 
 
@@ -306,6 +328,7 @@ AC_MSG_RESULT([
 
 	prefix:			${prefix}
 	sysconfdir:		${sysconfdir}
+	distconfdir:		${distconfdir}
 	libdir:			${libdir}
 	rootlibdir:		${rootlibdir}
 	includedir:		${includedir}

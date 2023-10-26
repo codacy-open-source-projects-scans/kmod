@@ -19,6 +19,7 @@ AM_CPPFLAGS = \
 	-include $(top_builddir)/config.h \
 	-I$(top_srcdir) \
 	-DSYSCONFDIR=\""$(sysconfdir)"\" \
+	-DDISTCONFDIR=\""$(distconfdir)"\" \
 	${zlib_CFLAGS}
 
 AM_CFLAGS = $(OUR_CFLAGS)
@@ -38,7 +39,7 @@ AM_LDFLAGS = $(OUR_LDFLAGS)
 # 6. If any interfaces have been removed or changed since the last public
 #    release, then set age to 0.
 LIBKMOD_CURRENT=6
-LIBKMOD_REVISION=0
+LIBKMOD_REVISION=1
 LIBKMOD_AGE=4
 
 noinst_LTLIBRARIES = shared/libshared.la
@@ -95,7 +96,7 @@ libkmod_libkmod_internal_la_DEPENDENCIES  = $(libkmod_libkmod_la_DEPENDENCIES)
 libkmod_libkmod_internal_la_LIBADD = $(libkmod_libkmod_la_LIBADD)
 
 pkgconfigdir = $(libdir)/pkgconfig
-pkgconfig_DATA = libkmod/libkmod.pc
+pkgconfig_DATA = libkmod/libkmod.pc tools/kmod.pc
 
 bashcompletiondir=@bashcompletiondir@
 dist_bashcompletion_DATA = \
