@@ -33,7 +33,6 @@ AC_PROG_MKDIR_P
 AC_PROG_LN_S
 PKG_PROG_PKG_CONFIG
 AC_PATH_PROG([XSLTPROC], [xsltproc])
-AC_PATH_PROG([MKOSI], [mkosi])
 
 AC_PROG_CC_C99
 
@@ -214,24 +213,6 @@ AS_IF([test "x$enable_debug" = "xyes"], [
 	AC_DEFINE(ENABLE_DEBUG, [1], [Debug messages.])
 ])
 
-AC_ARG_ENABLE([python],
-	AS_HELP_STRING([--enable-python], [enable Python libkmod bindings @<:@default=disabled@:>@]),
-	[], [enable_python=no])
-AS_IF([test "x$enable_python" = "xyes"], [
-	AM_PATH_PYTHON(,,[:])
-	AC_PATH_PROG([CYTHON], [cython], [:])
-
-	PKG_CHECK_MODULES([PYTHON], [python-${PYTHON_VERSION}],
-			  [have_python=yes],
-			  [PKG_CHECK_MODULES([PYTHON], [python],
-					     [have_python=yes],
-					     [have_python=no])])
-
-	AS_IF([test "x$have_python" = xno],
-	      [AC_MSG_ERROR([*** python support requested but libraries not found])])
-])
-AM_CONDITIONAL([BUILD_PYTHON], [test "x$enable_python" = "xyes"])
-
 AC_ARG_ENABLE([coverage],
 	AS_HELP_STRING([--enable-coverage], [enable test coverage @<:@default=disabled@:>@]),
 	[], [enable_coverage=no])
@@ -330,7 +311,6 @@ AC_CONFIG_FILES([
 	libkmod/docs/Makefile
 	libkmod/docs/version.xml
 	libkmod/libkmod.pc
-	libkmod/python/kmod/version.py
 	tools/kmod.pc
 ])
 
@@ -358,7 +338,6 @@ AC_MSG_RESULT([
 
 	experimental features:  ${enable_experimental}
 	tools:			${enable_tools}
-	python bindings:	${enable_python}
 	logging:		${enable_logging}
 	compression:		zstd=${with_zstd}  xz=${with_xz}  zlib=${with_zlib}
 	debug:			${enable_debug}
