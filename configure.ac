@@ -92,7 +92,7 @@ AC_SUBST([rootlibdir], [$with_rootlibdir])
 
 # Ideally this would be $prefix/lib/modules but default to /lib/modules for compatibility with earlier versions
 AC_ARG_WITH([module_directory],
-        AS_HELP_STRING([--with-module-directory=DIR], [directory in which to look for kernel modules - typically '/lib/modules' or '${prefix}/lib/modules']),
+        AS_HELP_STRING([--with-module-directory=DIR], [directory in which to look for kernel modules @<:@default=/lib/modules@:>@]),
         [], [with_module_directory=/lib/modules])
 AC_SUBST([module_directory], [$with_module_directory])
 
@@ -174,15 +174,6 @@ AC_SUBST([bashcompletiondir], [$with_bashcompletiondir])
 #####################################################################
 # --enable-
 #####################################################################
-
-AC_ARG_ENABLE([experimental],
-        AS_HELP_STRING([--enable-experimental], [enable experimental tools and features. Do not enable it unless you know what you are doing. @<:@default=disabled@:>@]),
-        [], enable_experimental=no)
-AM_CONDITIONAL([BUILD_EXPERIMENTAL], [test "x$enable_experimental" = "xyes"])
-AS_IF([test "x$enable_experimental" = "xyes"], [
-	AC_DEFINE(ENABLE_EXPERIMENTAL, [1], [Experimental features.])
-])
-CC_FEATURE_APPEND([with_features], [enable_experimental], [EXPERIMENTAL])
 
 AC_ARG_ENABLE([tools],
         AS_HELP_STRING([--disable-tools], [disable building tools that provide same functionality as module-init-tools @<:@default=enabled@:>@]),
@@ -336,7 +327,6 @@ AC_MSG_RESULT([
 	cflags:			${with_cflags} ${CFLAGS}
 	ldflags:		${with_ldflags} ${LDFLAGS}
 
-	experimental features:  ${enable_experimental}
 	tools:			${enable_tools}
 	logging:		${enable_logging}
 	compression:		zstd=${with_zstd}  xz=${with_xz}  zlib=${with_zlib}

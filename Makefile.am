@@ -111,9 +111,19 @@ install-exec-hook:
 		ln -sf $$so_img_rel_target_prefix$(rootlibdir)/$$so_img_name $(DESTDIR)$(libdir)/libkmod.so && \
 		mv $(DESTDIR)$(libdir)/libkmod.so.* $(DESTDIR)$(rootlibdir); \
 	fi
+if BUILD_TOOLS
+	for tool in insmod lsmod rmmod depmod modprobe modinfo; do \
+		$(LN_S) kmod $(DESTDIR)$(bindir)/$$tool; \
+	done
+endif
 
 uninstall-hook:
 	rm -f $(DESTDIR)$(rootlibdir)/libkmod.so*
+if BUILD_TOOLS
+	for tool in insmod lsmod rmmod depmod modprobe modinfo; do \
+		rm -f $(DESTDIR)$(bindir)/$$tool; \
+	done
+endif
 
 if BUILD_TOOLS
 bin_PROGRAMS = tools/kmod
@@ -128,12 +138,6 @@ tools_kmod_SOURCES = \
 	tools/modinfo.c tools/modprobe.c \
 	tools/depmod.c tools/log.h tools/log.c \
 	tools/static-nodes.c
-
-if BUILD_EXPERIMENTAL
-tools_kmod_SOURCES += \
-	tools/insert.c \
-	tools/remove.c
-endif
 
 tools_kmod_LDADD = \
 	shared/libshared.la \
@@ -260,11 +264,6 @@ TESTSUITE = \
 	testsuite/test-dependencies testsuite/test-depmod \
 	testsuite/test-list
 
-if BUILD_EXPERIMENTAL
-TESTSUITE += \
-	testsuite/test-tools
-endif
-
 check_PROGRAMS = $(TESTSUITE)
 TESTS = $(TESTSUITE)
 
@@ -306,11 +305,6 @@ testsuite_test_depmod_LDADD = $(TESTSUITE_LDADD)
 testsuite_test_depmod_CPPFLAGS = $(TESTSUITE_CPPFLAGS)
 testsuite_test_list_LDADD = $(TESTSUITE_LDADD)
 testsuite_test_list_CPPFLAGS = $(TESTSUITE_CPPFLAGS)
-
-if BUILD_EXPERIMENTAL
-testsuite_test_tools_LDADD = $(TESTSUITE_LDADD)
-testsuite_test_tools_CPPFLAGS = $(TESTSUITE_CPPFLAGS)
-endif
 
 testsuite-distclean:
 	$(RM) -r $(ROOTFS)
