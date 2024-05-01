@@ -41,27 +41,12 @@
 #include "libkmod.h"
 #include "libkmod-internal.h"
 
-struct kmod_file;
-struct file_ops {
-	int (*load)(struct kmod_file *file);
-	void (*unload)(struct kmod_file *file);
-};
-
 struct kmod_file {
-#ifdef ENABLE_ZSTD
-	bool zstd_used;
-#endif
-#ifdef ENABLE_XZ
-	bool xz_used;
-#endif
-#ifdef ENABLE_ZLIB
-	gzFile gzf;
-#endif
 	int fd;
 	enum kmod_file_compression_type compression;
 	off_t size;
 	void *memory;
-	const struct file_ops *ops;
+	int (*load)(struct kmod_file *file);
 	const struct kmod_ctx *ctx;
 	struct kmod_elf *elf;
 };
@@ -179,7 +164,6 @@ static int load_zstd(struct kmod_file *file)
 
 	ZSTD_freeDStream(dstr);
 	free((void *)zst_inb.src);
-	file->zstd_used = true;
 	file->memory = zst_outb.dst;
 	file->size = zst_outb.pos;
 	return 0;
@@ -190,16 +174,14 @@ out:
 	free((void *)zst_outb.dst);
 	return ret;
 }
-
-static void unload_zstd(struct kmod_file *file)
+#else
+static int load_zstd(struct kmod_file *file)
 {
-	if (!file->zstd_used)
-		return;
-	free(file->memory);
+	return -ENOSYS;
 }
+#endif
 
 static const char magic_zstd[] = {0x28, 0xB5, 0x2F, 0xFD};
-#endif
 
 #ifdef ENABLE_XZ
 static void xz_uncompress_belch(struct kmod_file *file, lzma_ret ret)
@@ -272,7 +254,6 @@ static int xz_uncompress(lzma_stream *strm, struct kmod_file *file)
 			goto out;
 		}
 	}
-	file->xz_used = true;
 	file->memory = p;
 	file->size = total;
 	return 0;
@@ -299,16 +280,14 @@ static int load_xz(struct kmod_file *file)
 	lzma_end(&strm);
 	return ret;
 }
-
-static void unload_xz(struct kmod_file *file)
+#else
+static int load_xz(struct kmod_file *file)
 {
-	if (!file->xz_used)
-		return;
-	free(file->memory);
+	return -ENOSYS;
 }
+#endif
 
 static const char magic_xz[] = {0xfd, '7', 'z', 'X', 'Z', 0};
-#endif
 
 #ifdef ENABLE_ZLIB
 #define READ_STEP (4 * 1024 * 1024)
@@ -317,12 +296,19 @@ static int load_zlib(struct kmod_file *file)
 	int err = 0;
 	off_t did = 0, total = 0;
 	_cleanup_free_ unsigned char *p = NULL;
+	gzFile gzf;
+	int gzfd;
 
 	errno = 0;
-	file->gzf = gzdopen(file->fd, "rb");
-	if (file->gzf == NULL)
+	gzfd = fcntl(file->fd, F_DUPFD_CLOEXEC, 3);
+	if (gzfd < 0)
 		return -errno;
-	file->fd = -1; /* now owned by gzf due gzdopen() */
+
+	gzf = gzdopen(gzfd, "rb"); /* takes ownership of the fd */
+	if (gzf == NULL) {
+		close(gzfd);
+		return -errno;
+	}
 
 	for (;;) {
 		int r;
@@ -337,12 +323,12 @@ static int load_zlib(struct kmod_file *file)
 			p = tmp;
 		}
 
-		r = gzread(file->gzf, p + did, total - did);
+		r = gzread(gzf, p + did, total - did);
 		if (r == 0)
 			break;
 		else if (r < 0) {
 			int gzerr;
-			const char *gz_errmsg = gzerror(file->gzf, &gzerr);
+			const char *gz_errmsg = gzerror(gzf, &gzerr);
 
 			ERR(file->ctx, "gzip: %s\n", gz_errmsg);
 
@@ -356,41 +342,21 @@ static int load_zlib(struct kmod_file *file)
 	file->memory = p;
 	file->size = did;
 	p = NULL;
+	gzclose(gzf);
 	return 0;
 
 error:
-	gzclose(file->gzf);
+	gzclose(gzf); /* closes the gzfd */
 	return err;
 }
-
-static void unload_zlib(struct kmod_file *file)
+#else
+static int load_zlib(struct kmod_file *file)
 {
-	if (file->gzf == NULL)
-		return;
-	free(file->memory);
-	gzclose(file->gzf); /* closes file->fd */
+	return -ENOSYS;
 }
+#endif
 
 static const char magic_zlib[] = {0x1f, 0x8b};
-#endif
-
-static const struct comp_type {
-	size_t magic_size;
-	enum kmod_file_compression_type compression;
-	const char *magic_bytes;
-	const struct file_ops ops;
-} comp_types[] = {
-#ifdef ENABLE_ZSTD
-	{sizeof(magic_zstd),	KMOD_FILE_COMPRESSION_ZSTD, magic_zstd, {load_zstd, unload_zstd}},
-#endif
-#ifdef ENABLE_XZ
-	{sizeof(magic_xz),	KMOD_FILE_COMPRESSION_XZ, magic_xz, {load_xz, unload_xz}},
-#endif
-#ifdef ENABLE_ZLIB
-	{sizeof(magic_zlib),	KMOD_FILE_COMPRESSION_ZLIB, magic_zlib, {load_zlib, unload_zlib}},
-#endif
-	{0,			KMOD_FILE_COMPRESSION_NONE, NULL, {NULL, NULL}}
-};
 
 static int load_reg(struct kmod_file *file)
 {
@@ -402,27 +368,39 @@ static int load_reg(struct kmod_file *file)
 	file->size = st.st_size;
 	file->memory = mmap(NULL, file->size, PROT_READ, MAP_PRIVATE,
 			    file->fd, 0);
-	if (file->memory == MAP_FAILED)
+	if (file->memory == MAP_FAILED) {
+		file->memory = NULL;
 		return -errno;
+	}
 
 	return 0;
 }
 
-static void unload_reg(struct kmod_file *file)
-{
-	munmap(file->memory, file->size);
-}
-
-static const struct file_ops reg_ops = {
-	load_reg, unload_reg
+static const struct comp_type {
+	size_t magic_size;
+	enum kmod_file_compression_type compression;
+	const char *magic_bytes;
+	int (*load)(struct kmod_file *file);
+} comp_types[] = {
+	{sizeof(magic_zstd),	KMOD_FILE_COMPRESSION_ZSTD, magic_zstd, load_zstd},
+	{sizeof(magic_xz),	KMOD_FILE_COMPRESSION_XZ, magic_xz, load_xz},
+	{sizeof(magic_zlib),	KMOD_FILE_COMPRESSION_ZLIB, magic_zlib, load_zlib},
+	{0,			KMOD_FILE_COMPRESSION_NONE, NULL, load_reg}
 };
 
 struct kmod_elf *kmod_file_get_elf(struct kmod_file *file)
 {
+	int err;
+
 	if (file->elf)
 		return file->elf;
 
-	kmod_file_load_contents(file);
+	err = kmod_file_load_contents(file);
+	if (err) {
+		errno = err;
+		return NULL;
+	}
+
 	file->elf = kmod_elf_new(file->memory, file->size);
 	return file->elf;
 }
@@ -430,67 +408,49 @@ struct kmod_elf *kmod_file_get_elf(struct kmod_file *file)
 struct kmod_file *kmod_file_open(const struct kmod_ctx *ctx,
 						const char *filename)
 {
-	struct kmod_file *file = calloc(1, sizeof(struct kmod_file));
-	const struct comp_type *itr;
-	size_t magic_size_max = 0;
-	int err = 0;
+	struct kmod_file *file;
+	char buf[7];
+	ssize_t sz;
 
+	assert_cc(sizeof(magic_zstd) < sizeof(buf));
+	assert_cc(sizeof(magic_xz) < sizeof(buf));
+	assert_cc(sizeof(magic_zlib) < sizeof(buf));
+
+	file = calloc(1, sizeof(struct kmod_file));
 	if (file == NULL)
 		return NULL;
 
 	file->fd = open(filename, O_RDONLY|O_CLOEXEC);
 	if (file->fd < 0) {
-		err = -errno;
-		goto error;
+		free(file);
+		return NULL;
 	}
 
-	for (itr = comp_types; itr->ops.load != NULL; itr++) {
-		if (magic_size_max < itr->magic_size)
-			magic_size_max = itr->magic_size;
+	sz = read_str_safe(file->fd, buf, sizeof(buf));
+	lseek(file->fd, 0, SEEK_SET);
+	if (sz != (sizeof(buf) - 1)) {
+		if (sz < 0)
+			errno = -sz;
+		else
+			errno = EINVAL;
+
+		close(file->fd);
+		free(file);
+		return NULL;
 	}
 
-	if (magic_size_max > 0) {
-		char *buf = alloca(magic_size_max + 1);
-		ssize_t sz;
+	for (unsigned int i = 0; i < ARRAY_SIZE(comp_types); i++) {
+		const struct comp_type *itr = &comp_types[i];
 
-		if (buf == NULL) {
-			err = -errno;
-			goto error;
+		file->load = itr->load;
+		file->compression = itr->compression;
+		if (itr->magic_size &&
+		    memcmp(buf, itr->magic_bytes, itr->magic_size) == 0) {
+			break;
 		}
-		sz = read_str_safe(file->fd, buf, magic_size_max + 1);
-		lseek(file->fd, 0, SEEK_SET);
-		if (sz != (ssize_t)magic_size_max) {
-			if (sz < 0)
-				err = sz;
-			else
-				err = -EINVAL;
-			goto error;
-		}
-
-		for (itr = comp_types; itr->ops.load != NULL; itr++) {
-			if (memcmp(buf, itr->magic_bytes, itr->magic_size) == 0) {
-				file->ops = &itr->ops;
-				file->compression = itr->compression;
-				break;
-			}
-		}
-	}
-
-	if (file->ops == NULL) {
-		file->ops = &reg_ops;
-		file->compression = KMOD_FILE_COMPRESSION_NONE;
 	}
 
 	file->ctx = ctx;
-
-error:
-	if (err < 0) {
-		if (file->fd >= 0)
-			close(file->fd);
-		free(file);
-		errno = -err;
-		return NULL;
-	}
 
 	return file;
 }
@@ -498,13 +458,13 @@ error:
 /*
  *  Callers should just check file->memory got updated
  */
-void kmod_file_load_contents(struct kmod_file *file)
+int kmod_file_load_contents(struct kmod_file *file)
 {
 	if (file->memory)
-		return;
+		return 0;
 
 	/*  The load functions already log possible errors. */
-	file->ops->load(file);
+	return file->load(file);
 }
 
 void *kmod_file_get_contents(const struct kmod_file *file)
@@ -532,10 +492,13 @@ void kmod_file_unref(struct kmod_file *file)
 	if (file->elf)
 		kmod_elf_unref(file->elf);
 
-	if (file->memory)
-		file->ops->unload(file);
+	if (file->compression == KMOD_FILE_COMPRESSION_NONE) {
+		if (file->memory)
+			munmap(file->memory, file->size);
+	} else {
+		free(file->memory);
+	}
 
-	if (file->fd >= 0)
-		close(file->fd);
+	close(file->fd);
 	free(file);
 }
