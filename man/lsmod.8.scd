@@ -15,16 +15,17 @@ lsmod - Show the status of modules in the Linux Kernel
 # COPYRIGHT
 
 This manual page originally Copyright 2002, Rusty Russell, IBM Corporation.
-Maintained by Jon Masters and others.
 
 # SEE ALSO
 
-*insmod*(8), *modprobe*(8), *modinfo*(8) *depmod*(8)
+*insmod*(8), *modprobe*(8), *modinfo*(8), *depmod*(8)
 
 # AUTHORS
 
-*Jon Masters* <jcm@jonmasters.org>
-	Developer
+Numerous contributions have come from the linux-modules mailing list
+<linux-modules@vger.kernel.org> and Github. If you have a clone of kmod.git
+itself, the output of *git-shortlog*(1) and *git-blame*(1) can show you the
+authors for specific parts of the project.
 
-*Lucas De Marchi* <lucas.de.marchi@gmail.com>
-	Developer
+*Lucas De Marchi* <lucas.de.marchi@gmail.com> is the current maintainer of the
+project.

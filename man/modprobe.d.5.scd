@@ -6,34 +6,51 @@ modprobe.d - Configuration directory for modprobe
 
 # SYNOPSIS
 
-/lib/modprobe.d/\*.conf
-
-@DISTCONFDIR@/modprobe.d/\*.conf
-
-/usr/local/lib/modprobe.d/\*.conf
+@SYSCONFDIR@/modprobe.d/\*.conf
 
 /run/modprobe.d/\*.conf
 
-/etc/modprobe.d/\*.conf
+/usr/local/lib/modprobe.d/\*.conf
+
+@DISTCONFDIR@/modprobe.d/\*.conf
+
+/lib/modprobe.d/\*.conf
 
 # DESCRIPTION
 
 Because the *modprobe* command can add or remove more than one module, due to
 modules having dependencies, we need a method of specifying what options are to
-be used with those modules. All files underneath the /etc/modprobe.d directory
-which end with the .conf extension specify those options as required. They can
-also be used to create convenient aliases: alternate names for a module, or they
-can override the normal *modprobe* behavior altogether for those with special
-requirements (such as inserting more than one module).
+be used with those modules. One can also use them to create convenient aliases:
+alternate names for a module, or they can override the normal *modprobe*
+behavior altogether for those with special requirements (such as inserting more
+than one module).
 
 Note that module and alias names (like other module names) can have - or \_ in
 them: both are interchangeable throughout all the module commands as underscore
 conversion happens automatically.
 
-The format of files under modprobe.d is simple: one command per line, with blank
-lines and lines starting with '#' ignored (useful for adding comments). A '\\'
-at the end of a line causes it to continue on the next line, which makes the
-file a bit neater.
+# CONFIGURATION FORMAT
+
+The configuration files contain one command per line, with blank lines and lines
+starting with '#' ignored (useful for adding comments). A '\\' at the end of a
+line causes it to continue on the next line, which makes the files a bit neater.
+
+See the COMMANDS section below for more.
+
+# CONFIGURATION DIRECTORIES AND PRECEDENCE
+
+Configuration files are read from directories in listed in SYNOPSYS in that
+order of precedence. Once a file of a given filename is loaded, any file of the
+same name in subsequent directories is ignored.
+
+All configuration files are sorted in lexicographic order, regardless of the
+directory they reside in. Configuration files can either be completely replaced
+(by having a new configuration file with the same name in a directory of higher
+priority) or partially replaced (by having a configuration file that is ordered
+later).
+
+NOTE: The configuration directories may be altered via the MODPROBE_OPTIONS
+environment variable. See the ENVIRONMENT section in *modprobe*(8).
 
 # COMMANDS
 
@@ -94,7 +111,7 @@ install _modulename_ _command..._
 options _modulename_ _option..._
 	This command allows you to add options to the module _modulename_ (which
 	might be an alias) every time it is inserted into the kernel: whether
-	directly (using *modprobe* _ modulename_) or because the module being
+	directly (using *modprobe* _modulename_) or because the module being
 	inserted depends on this module.
 
 	All options are added together: they can come from an *option* for the
@@ -106,7 +123,7 @@ remove _modulename_ _command..._
 
 softdep _modulename_ pre: _modules..._ post: _modules..._
 	The *softdep* command allows you to specify soft, or optional, module
-	dependencies. _ modulename_ can be used without these optional modules
+	dependencies. _modulename_ can be used without these optional modules
 	installed, but usually with some features missing. For example, a driver
 	for a storage HBA might require another module be loaded in order to use
 	management features.
@@ -150,7 +167,6 @@ directly within the modules.
 # COPYRIGHT
 
 This manual page originally Copyright 2004, Rusty Russell, IBM Corporation.
-Maintained by Jon Masters and others.
 
 # SEE ALSO
 
@@ -158,11 +174,10 @@ Maintained by Jon Masters and others.
 
 # AUTHORS
 
-*Jon Masters* <jcm@jonmasters.org>
-	Developer
+Numerous contributions have come from the linux-modules mailing list
+<linux-modules@vger.kernel.org> and Github. If you have a clone of kmod.git
+itself, the output of *git-shortlog*(1) and *git-blame*(1) can show you the
+authors for specific parts of the project.
 
-*Robby Workman* <rworkman@slackware.com>
-	Developer
-
-*Lucas De Marchi* <lucas.de.marchi@gmail.com>
-	Developer
+*Lucas De Marchi* <lucas.de.marchi@gmail.com> is the current maintainer of the
+project.
