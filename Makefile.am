@@ -39,9 +39,9 @@ AM_LDFLAGS = $(OUR_LDFLAGS)
 #    increment age.
 # 6. If any interfaces have been removed or changed since the last public
 #    release, then set age to 0.
-LIBKMOD_CURRENT=6
-LIBKMOD_REVISION=2
-LIBKMOD_AGE=4
+LIBKMOD_CURRENT=7
+LIBKMOD_REVISION=0
+LIBKMOD_AGE=5
 
 noinst_LTLIBRARIES = shared/libshared.la
 shared_libshared_la_SOURCES = \
@@ -276,7 +276,7 @@ TESTSUITE = \
 	testsuite/test-modinfo testsuite/test-util testsuite/test-new-module \
 	testsuite/test-modprobe testsuite/test-blacklist \
 	testsuite/test-dependencies testsuite/test-depmod \
-	testsuite/test-list testsuite/test-user
+	testsuite/test-list testsuite/test-weakdep
 
 check_PROGRAMS = $(TESTSUITE)
 TESTS = $(TESTSUITE)
@@ -319,8 +319,8 @@ testsuite_test_depmod_LDADD = $(TESTSUITE_LDADD)
 testsuite_test_depmod_CPPFLAGS = $(TESTSUITE_CPPFLAGS)
 testsuite_test_list_LDADD = $(TESTSUITE_LDADD)
 testsuite_test_list_CPPFLAGS = $(TESTSUITE_CPPFLAGS)
-testsuite_test_user_LDADD = $(TESTSUITE_LDADD)
-testsuite_test_user_CPPFLAGS = $(TESTSUITE_CPPFLAGS)
+testsuite_test_weakdep_LDADD = $(TESTSUITE_LDADD)
+testsuite_test_weakdep_CPPFLAGS = $(TESTSUITE_CPPFLAGS)
 
 testsuite-distclean:
 	$(RM) -r $(ROOTFS)
@@ -333,7 +333,7 @@ testsuite-distclean:
 DISTCLEAN_LOCAL_HOOKS += testsuite-distclean
 EXTRA_DIST += testsuite/rootfs-pristine
 
-DISTCHECK_CONFIGURE_FLAGS=--enable-gtk-doc --sysconfdir=/etc \
+AM_DISTCHECK_CONFIGURE_FLAGS=--enable-gtk-doc --sysconfdir=/etc \
 	--with-zlib --with-zstd --with-xz --with-openssl \
 	--with-bashcompletiondir=$$dc_install_base/$(bashcompletiondir)
 
@@ -412,7 +412,7 @@ coverity-clean:
 
 git-release:
 	head -1 NEWS | grep -q "kmod $(VERSION)"
-	git commit -a -m "kmod $(VERSION)"
+	git commit -a -s -m "kmod $(VERSION)"
 	git tag -m "kmod $(VERSION)" -s v$(VERSION)
 	git gc --prune=0
 

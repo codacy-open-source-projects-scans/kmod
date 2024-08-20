@@ -1,3 +1,87 @@
+kmod 33
+=======
+
+- Improvements
+
+	- Allow to handle compressed modules even without decompression
+	  libraries linked in. Previously we would detect if the kernel
+	  supported the decompression algorithm and pass the module directly
+	  through finit_module(). However it wouldn't consider the file if
+	  the respective decompression library was compiled out. Now it's
+	  possible to completely disable all libraries and still have module
+	  load working with libkmod.
+
+	  Tools that inspect module content themselves like modinfo and depmod
+	  won't work if the decompression library is not enabled.
+
+	- Add weak dependencies - these are similar to pre softdep, but they
+	  don't cause the dependency to be loaded by libkmod: when a module has
+	  a weak dependency, it is expected that module may or may not be used,
+	  with decision happening in runtime by the kernel. It's purpose is to
+	  be informational for other tools like ones used to create initramfs,
+	  so the module is made available before switch_root(), but doesn't
+	  imply it to be loaded when not needed.
+
+	- Improve compatibility with non-gnu libc like musl and uClibc. Now it's
+	  possible to build and use libkmod and tools without any additional compat
+	  patches.
+
+	- Move manpages from xsltproc to scdoc, which is now needed during build.
+
+	- Improve documentation in manpages, fixing typos, rewording sentences,
+	  detailing how configuration files are handled with precedence order
+	  and making all the manpages more consistent on how to reference options,
+	  environment variables, configuration, authors, etc.
+
+	- Speed up zstd decompression, particularly when not using glibc.
+
+	- Stop parsing .alias files from modprobe.d directories. Configuration files
+	  were always documented as needing the .conf extension. For compatibility
+	  reason with module-init-tools, kmod also parsed .alias files. However that
+	  was also done in module-init-tools for compatibility reasons and not
+	  documented anywhere. From inspection on what distros are using, none use
+	  .alias files in practice, so stop parsing those files and follow what's
+	  documented.
+
+	- Adopt SPDX for license and cleanup comments on individual files.
+
+	- Since kmod 29 there's a github mirror for the repository. Now it's
+	  also used for issues and improvement tracking. With that, the old
+	  TODO file has been removed and distros/users are encouraged to file
+	  issues in github.
+
+- Bug fixes
+
+	- Move kmod.pc to the right dir, ${datadir}/pkgconfig, as it's related
+	  to kmod, not libkmod.
+
+	- Fix error handling while loading a file and mmap fails.
+
+	- Fix error handling while handling errors from the decompression
+	  libraries.
+
+	- Add missing documentation for KMOD_INDEX_MODULES_BUILTIN that was
+	  added in v27 breaking the ABI. A wide search has found one external
+	  tool using it, which hasn't been updated in the past 12 years. It
+	  was deemed safe to simply update the documentation to include the
+	  missing enum.
+
+	- Move kmod_module_new_from_name_lookup() to the correct symbol
+	  version. It was added by mistake to @LIBKMOD_5 when v30 got released.
+	  No external user of this API was found, so it was considered safe
+	  to just move it.
+
+- Others
+
+	- Overwrite symlinks when installing tools.
+
+	- General cleanup of how (de)compression libraries are integrated.
+
+	- Add CI infrastructure to automatically test in several distros
+	  before applying commit series. Currently the latest versions of
+	  Alpine, Archlinux, Fedora and Ubuntu are covered. More distros are
+	  easy to add as they are all containerized.
+
 kmod 32
 =======
 
@@ -7,7 +91,7 @@ kmod 32
 	  to update the mapping
 
 	- Teach kmod to load modprobe.d/depmod.d configuration from ${prefix}/lib
-	  and allow it to be overriden during build with --with-distconfdir=DIR
+	  and allow it to be overridden during build with --with-distconfdir=DIR
 
 	- Make kernel modules directory configurable. This allows distro to
 	  make kmod use only files from /usr regardless of having a compat
@@ -63,7 +147,7 @@ kmod 31
 	- Make modprobe fallback to syslog when stderr is not available, as was
 	  documented in the man page, but not implemented
 
-	- Better explaing `modprobe -r` and how it differentiates from rmmod
+	- Better explaining `modprobe -r` and how it differentiates from rmmod
 
 	- depmod learned a `-o <dir>` option to allow using a separate output
 	  directory. With this, it's possible to split the output files from
@@ -116,7 +200,7 @@ kmod 30
 	  module name, without considering the aliases. Other than that search
 	  order is similar to kmod_module_new_from_lookup().
 
-	- modinfo learned the --modname option to explicitely show information
+	- modinfo learned the --modname option to explicitly show information
 	  about the module, even if there is an alias with the same name. This
 	  allows showing information about e.g. kernel/lib/crc32.ko, even if
 	  kernel also exports a crc32 alias in modules.alias:
@@ -141,7 +225,7 @@ kmod 30
 	  The wait behavior provided by the kernel when not passing O_NONBLOCK
 	  to delete_module() was removed in v3.13 due to not be used and the
 	  consequences of having to support it in the kernel. However there may
-	  be some users, particularly on testsuites for individual susbsystems, that
+	  be some users, particularly on testsuites for individual subsystems, that
 	  would want that. So provide a userspace implementation inside modprobe for
 	  such users. "rmmod" doesn't have a --wait as it remains a bare minimal over
 	  the API provided by the kernel. In future the --wait behavior can be added
@@ -331,7 +415,7 @@ kmod 26
 		  sig_key:        51:C4:0C:6D:7E:A5:6C:D8:8F:B4:3A:DF:91:78:4F:18:BC:D5:E4:C5
 		  sig_hashalgo:   sha256
 
-	  If kmod is not linked to openssl we just start printing "unknonwn" in the
+	  If kmod is not linked to openssl we just start printing "unknown" in the
 	  sig_hashalgo field rather than the bogus value.
 
 
@@ -409,7 +493,7 @@ kmod 22
 =======
 
 - Tools:
-	- Change defaul log level for tools to WARNING rather than ERROR and update
+	- Change default log level for tools to WARNING rather than ERROR and update
 	  some log levels for current messages
 
 	- depmod doesn't fallback to uname if a bad version is passed in the command
@@ -874,7 +958,7 @@ matched more than one module.
   The only missing things are the options '--showconfig' and '-t / -l'. These
   last ones have been deprecated long ago and they will be removed from
   modprobe. A lot of effort has been put on kmod-modprobe to ensure it
-  maintains compabitility with modprobe.
+  maintains compatibility with modprobe.
 
 - linux-modules@vger.kernel.org became the official mailing list for kmod
 

@@ -585,7 +585,7 @@ KMOD_EXPORT int kmod_module_new_from_lookup(struct kmod_ctx *ctx,
  *
  * Lookup by module name, without considering possible aliases. This is similar
  * to kmod_module_new_from_lookup(), but don't consider as source indexes and
- * configurations that work with aliases. When succesful, this always resolves
+ * configurations that work with aliases. When successful, this always resolves
  * to one and only one module.
  *
  * The search order is: 1. module names in modules.dep index;
@@ -857,7 +857,7 @@ static int do_finit_module(struct kmod_module *mod, unsigned int flags,
 	/*
 	 * When module is not compressed or its compression type matches the
 	 * one in use by the kernel, there is no need to read the file
-	 * in userspace. Otherwise, re-use ENOSYS to trigger the same fallback
+	 * in userspace. Otherwise, reuse ENOSYS to trigger the same fallback
 	 * as when finit_module() is not supported.
 	 */
 	compression = kmod_file_get_compression(mod->file);
@@ -1352,7 +1352,7 @@ KMOD_EXPORT int kmod_module_probe_insert_module(struct kmod_module *mod,
 	}
 
 	/*
-	 * Ugly assignement + check. We need to check if we were told to check
+	 * Ugly assignment + check. We need to check if we were told to check
 	 * blacklist and also return the reason why we failed.
 	 * KMOD_PROBE_APPLY_BLACKLIST_ALIAS_ONLY will take effect only if the
 	 * module is an alias, so we also need to check it

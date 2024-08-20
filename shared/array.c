@@ -5,6 +5,7 @@
 
 #include <assert.h>
 #include <errno.h>
+#include <stdint.h>
 #include <stdlib.h>
 #include <string.h>
 
@@ -15,12 +16,24 @@
 
 static int array_realloc(struct array *array, size_t new_total)
 {
-	void *tmp = realloc(array->array, sizeof(void *) * new_total);
+	void *tmp;
+
+	if (SIZE_MAX / sizeof(void *) < new_total)
+		return -ENOMEM;
+	tmp = realloc(array->array, sizeof(void *) * new_total);
 	if (tmp == NULL)
 		return -ENOMEM;
 	array->array = tmp;
 	array->total = new_total;
 	return 0;
+}
+
+static void array_trim(struct array *array)
+{
+	if (array->count + array->step < array->total) {
+		/* ignore error */
+		array_realloc(array, array->total - array->step);
+	}
 }
 
 void array_init(struct array *array, size_t step)
@@ -37,7 +50,11 @@ int array_append(struct array *array, const void *element)
 	size_t idx;
 
 	if (array->count + 1 >= array->total) {
-		int r = array_realloc(array, array->total + array->step);
+		int r;
+
+		if (SIZE_MAX - array->total < array->step)
+			return -ENOMEM;
+		r = array_realloc(array, array->total + array->step);
 		if (r < 0)
 			return r;
 	}
@@ -58,16 +75,15 @@ int array_append_unique(struct array *array, const void *element)
 }
 
 void array_pop(struct array *array) {
+	if (array->count == 0)
+		return;
 	array->count--;
-	if (array->count + array->step < array->total) {
-		int r = array_realloc(array, array->total - array->step);
-		if (r < 0)
-			return;
-	}
+	array_trim(array);
 }
 
 void array_free_array(struct array *array) {
 	free(array->array);
+	array->array = NULL;
 	array->count = 0;
 	array->total = 0;
 }
@@ -78,7 +94,7 @@ void array_sort(struct array *array, int (*cmp)(const void *a, const void *b))
 	qsort(array->array, array->count, sizeof(void *), cmp);
 }
 
-int array_remove_at(struct array *array, unsigned int pos)
+int array_remove_at(struct array *array, size_t pos)
 {
 	if (array->count <= pos)
 		return -ENOENT;
@@ -87,13 +103,7 @@ int array_remove_at(struct array *array, unsigned int pos)
 	if (pos < array->count)
 		memmove(array->array + pos, array->array + pos + 1,
 			sizeof(void *) * (array->count - pos));
-
-	if (array->count + array->step < array->total) {
-		int r = array_realloc(array, array->total - array->step);
-		/* ignore error */
-		if (r < 0)
-			return 0;
-	}
+	array_trim(array);
 
 	return 0;
 }

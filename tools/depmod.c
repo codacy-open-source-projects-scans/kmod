@@ -929,8 +929,11 @@ static int mod_add_dependency(struct mod *mod, struct symbol *sym)
 	err = array_append_unique(&mod->deps, sym->owner);
 	if (err == -EEXIST)
 		return 0;
-	if (err < 0)
+	if (err < 0) {
+		CRIT("failed to add symbol %s to module %s: %s\n",
+		    sym->name, mod->path, strerror(-err));
 		return err;
+	}
 
 	sym->owner->users++;
 	SHOW("%s needs \"%s\": %s\n", mod->path, sym->name, sym->owner->path);
@@ -1384,7 +1387,7 @@ static int depmod_modules_search(struct depmod *depmod)
 	for (ext = depmod->cfg->externals; ext != NULL; ext = ext->next) {
 		err = depmod_modules_search_path(depmod, ext->path);
 		if (err < 0 && err == -ENOENT)
-			/* ignore external dir absense */
+			/* ignore external dir absence */
 			continue;
 	}
 
@@ -1581,6 +1584,7 @@ static int depmod_load_module_dependencies(struct depmod *depmod, struct mod *mo
 {
 	const struct cfg *cfg = depmod->cfg;
 	struct kmod_list *l;
+	int ret = 0;
 
 	DBG("do dependencies of %s\n", mod->path);
 	kmod_list_foreach(l, mod->dep_sym_list) {
@@ -1589,6 +1593,7 @@ static int depmod_load_module_dependencies(struct depmod *depmod, struct mod *mo
 		int bindtype = kmod_module_dependency_symbol_get_bind(l);
 		struct symbol *sym = depmod_symbol_find(depmod, name);
 		uint8_t is_weak = bindtype == KMOD_SYMBOL_WEAK;
+		int err;
 
 		if (sym == NULL) {
 			DBG("%s needs (%c) unknown symbol %s\n",
@@ -1607,15 +1612,18 @@ static int depmod_load_module_dependencies(struct depmod *depmod, struct mod *mo
 				    mod->path, name);
 		}
 
-		mod_add_dependency(mod, sym);
+		err = mod_add_dependency(mod, sym);
+		if (err < 0)
+			ret = err;
 	}
 
-	return 0;
+	return ret;
 }
 
 static int depmod_load_dependencies(struct depmod *depmod)
 {
 	struct mod **itr, **itr_end;
+	int ret = 0;
 
 	DBG("load dependencies (%zd modules, %u symbols)\n",
 	    depmod->modules.count, hash_get_count(depmod->symbols));
@@ -1624,19 +1632,22 @@ static int depmod_load_dependencies(struct depmod *depmod)
 	itr_end = itr + depmod->modules.count;
 	for (; itr < itr_end; itr++) {
 		struct mod *mod = *itr;
+		int err;
 
 		if (mod->dep_sym_list == NULL) {
 			DBG("ignoring %s: no dependency symbols\n", mod->path);
 			continue;
 		}
 
-		depmod_load_module_dependencies(depmod, mod);
+		err = depmod_load_module_dependencies(depmod, mod);
+		if (err < 0)
+			ret = err;
 	}
 
 	DBG("loaded dependencies (%zd modules, %u symbols)\n",
 	    depmod->modules.count, hash_get_count(depmod->symbols));
 
-	return 0;
+	return ret;
 }
 
 static int dep_cmp(const void *pa, const void *pb)
@@ -1706,7 +1717,9 @@ static int depmod_report_one_cycle(struct depmod *depmod,
 	     v = v->parent, n++) {
 
 		sz += v->mod->modnamesz - 1;
-		array_append(&reverse, v);
+		rc = array_append(&reverse, v);
+		if (rc < 0)
+			return rc;
 		rc = hash_add(loop_set, v->mod->modname, NULL);
 		if (rc != 0)
 			return rc;
@@ -2852,10 +2865,10 @@ static int depfile_up_to_date_dir(DIR *d, time_t mtime, size_t baselen, char *pa
 	return err;
 }
 
-/* uptodate: 1, outdated: 0, errors < 0 */
+/* up-to-date: 1, outdated: 0, errors < 0 */
 static int depfile_up_to_date(const char *dirname)
 {
-	char path[PATH_MAX];
+	char path[PATH_MAX + 1];
 	DIR *d = opendir(dirname);
 	struct stat st;
 	size_t baselen;
@@ -2921,14 +2934,20 @@ static int do_depmod(int argc, char *argv[])
 			maybe_all = 1;
 			break;
 		case 'b':
-			if (root)
-				free(root);
+			free(root);
 			root = path_make_absolute_cwd(optarg);
+			if (root == NULL) {
+				ERR("invalid image path %s\n", optarg);
+				goto cmdline_failed;
+			}
 			break;
 		case 'o':
-			if (out_root)
-				free(out_root);
+			free(out_root);
 			out_root = path_make_absolute_cwd(optarg);
+			if (out_root == NULL) {
+				ERR("invalid output directory %s\n", optarg);
+				goto cmdline_failed;
+			}
 			break;
 		case 'C': {
 			size_t bytes = sizeof(char *) * (n_config_paths + 2);
@@ -2960,7 +2979,7 @@ static int do_depmod(int argc, char *argv[])
 			out = stdout;
 			break;
 		case 'P':
-			if (optarg[1] != '\0') {
+			if (strlen(optarg) != 1) {
 				CRIT("-P only takes a single char\n");
 				goto cmdline_failed;
 			}
