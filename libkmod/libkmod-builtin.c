@@ -127,13 +127,18 @@ static off_t get_string(struct kmod_builtin_iter *iter, off_t offset,
 		offset += (off_t) partsz;
 
 		if (iter->bufsz < linesz + partsz) {
-			iter->bufsz = linesz + partsz;
-			iter->buf = realloc(iter->buf, iter->bufsz);
+			void *tmp;
+			size_t s;
 
-			if (!iter->buf) {
+			s = linesz + partsz;
+			tmp = realloc(iter->buf, s);
+
+			if (!tmp) {
 				sv_errno = errno;
 				goto fail;
 			}
+			iter->bufsz = s;
+			iter->buf = tmp;
 		}
 
 		strncpy(iter->buf + linesz, buf, partsz);
@@ -141,6 +146,10 @@ static off_t get_string(struct kmod_builtin_iter *iter, off_t offset,
 	}
 
 	if (linesz) {
+		if (iter->buf[linesz - 1] != '\0') {
+			sv_errno = EINVAL;
+			goto fail;
+		}
 		*line = iter->buf;
 		*size = linesz;
 	}
@@ -210,8 +219,10 @@ static bool kmod_builtin_iter_get_modname(struct kmod_builtin_iter *iter,
 	size_t linesz, len;
 	off_t offset;
 
-	if (iter->pos == iter->size)
-		return false;
+	if (iter->pos == iter->size) {
+		sv_errno = EINVAL;
+		goto fail;
+	}
 
 	line = NULL;
 
@@ -225,7 +236,7 @@ static bool kmod_builtin_iter_get_modname(struct kmod_builtin_iter *iter,
 
 	dot = strchr(line, '.');
 	if (!dot) {
-		sv_errno = errno;
+		sv_errno = EINVAL;
 		ERR(iter->ctx, "kmod_builtin_iter_get_modname: unexpected string without modname prefix\n");
 		goto fail;
 	}

@@ -41,7 +41,6 @@ AC_PROG_CC_C99
 
 AC_CHECK_FUNCS_ONCE(__xstat)
 AC_CHECK_FUNCS_ONCE([__secure_getenv secure_getenv])
-AC_CHECK_FUNCS_ONCE([finit_module])
 
 CC_CHECK_FUNC_BUILTIN([__builtin_clz])
 CC_CHECK_FUNC_BUILTIN([__builtin_types_compatible_p])
@@ -55,12 +54,6 @@ AC_CHECK_MEMBERS([struct stat.st_mtim], [], [], [#include <sys/stat.h>])
 # basename may be only available in libgen.h with the POSIX behavior,
 # not desired here
 AC_CHECK_DECLS_ONCE([[strndupa], [basename]], [], [], [[#include <string.h>]])
-
-# RHEL 5 and older do not have be32toh
-AC_CHECK_DECLS_ONCE([be32toh])
-
-# Check kernel headers
-AC_CHECK_HEADERS_ONCE([linux/module.h])
 
 AC_MSG_CHECKING([whether _Static_assert() is supported])
 AC_COMPILE_IFELSE(
@@ -86,11 +79,6 @@ AC_ARG_WITH([distconfdir], AS_HELP_STRING([--with-distconfdir=DIR], [directory t
         [], [with_distconfdir='${prefix}/lib'])
 AC_SUBST([distconfdir], [$with_distconfdir])
 
-AC_ARG_WITH([rootlibdir],
-        AS_HELP_STRING([--with-rootlibdir=DIR], [rootfs directory to install shared libraries]),
-        [], [with_rootlibdir=$libdir])
-AC_SUBST([rootlibdir], [$with_rootlibdir])
-
 # Ideally this would be $prefix/lib/modules but default to /lib/modules for compatibility with earlier versions
 AC_ARG_WITH([module_directory],
         AS_HELP_STRING([--with-module-directory=DIR], [directory in which to look for kernel modules @<:@default=/lib/modules@:>@]),
@@ -98,7 +86,7 @@ AC_ARG_WITH([module_directory],
 AC_SUBST([module_directory], [$with_module_directory])
 
 # Check all directory arguments for consistency.
-for ac_var in	distconfdir rootlibdir module_directory
+for ac_var in	distconfdir module_directory
 do
   eval ac_val=\$$ac_var
   # Remove trailing slashes.
@@ -193,11 +181,6 @@ AS_IF([test "x$enable_manpages" = "xyes"], [
 	       AC_MSG_ERROR([*** scdoc needed for building manpages. Either install it or pass --disable-manpages])
 	])])
 AM_CONDITIONAL([BUILD_MANPAGES], [test "x$enable_manpages" = "xyes"])
-
-AC_ARG_ENABLE([test-modules],
-        AS_HELP_STRING([--disable-test-modules], [disable building test modules during make check: cached modules will be used @<:@default=enabled@:>@]),
-	[], enable_test_modules=yes)
-AM_CONDITIONAL([BUILD_MODULES], [test "x$enable_test_modules" = "xyes"])
 
 AC_ARG_ENABLE([logging],
 	AS_HELP_STRING([--disable-logging], [disable system logging @<:@default=enabled@:>@]),
@@ -330,7 +313,6 @@ AC_MSG_RESULT([
 	sysconfdir:		${sysconfdir}
 	distconfdir:		${distconfdir}
 	libdir:			${libdir}
-	rootlibdir:		${rootlibdir}
 	includedir:		${includedir}
 	bindir:			${bindir}
 	Bash completions dir:   ${with_bashcompletiondir}
@@ -346,7 +328,6 @@ AC_MSG_RESULT([
 	coverage:		${enable_coverage}
 	doc:			${enable_gtk_doc}
 	man:			${enable_manpages}
-	test-modules:           ${enable_test_modules}
 
 	features:               ${with_features}
 ])

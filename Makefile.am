@@ -45,12 +45,12 @@ LIBKMOD_AGE=5
 
 noinst_LTLIBRARIES = shared/libshared.la
 shared_libshared_la_SOURCES = \
-	shared/macro.h \
-	shared/missing.h \
 	shared/array.c \
 	shared/array.h \
 	shared/hash.c \
 	shared/hash.h \
+	shared/macro.h \
+	shared/missing.h \
 	shared/scratchbuf.c \
 	shared/scratchbuf.h \
 	shared/strbuf.c \
@@ -62,18 +62,18 @@ include_HEADERS = libkmod/libkmod.h
 lib_LTLIBRARIES = libkmod/libkmod.la
 
 libkmod_libkmod_la_SOURCES = \
-	libkmod/libkmod.h \
-	libkmod/libkmod-internal-file.h \
-	libkmod/libkmod-internal.h \
-	libkmod/libkmod.c \
 	libkmod/libkmod-builtin.c \
-	libkmod/libkmod-list.c \
+	libkmod/libkmod.c \
 	libkmod/libkmod-config.c \
+	libkmod/libkmod-elf.c \
+	libkmod/libkmod-file.c \
+	libkmod/libkmod.h \
 	libkmod/libkmod-index.c \
 	libkmod/libkmod-index.h \
+	libkmod/libkmod-internal-file.h \
+	libkmod/libkmod-internal.h \
+	libkmod/libkmod-list.c \
 	libkmod/libkmod-module.c \
-	libkmod/libkmod-file.c \
-	libkmod/libkmod-elf.c \
 	libkmod/libkmod-signature.c
 
 if ENABLE_XZ
@@ -117,13 +117,6 @@ dist_bashcompletion_DATA = \
 	shell-completion/bash/kmod
 
 install-exec-hook:
-	if test "$(libdir)" != "$(rootlibdir)"; then \
-		$(MKDIR_P) $(DESTDIR)$(rootlibdir) && \
-		so_img_name=$$(readlink $(DESTDIR)$(libdir)/libkmod.so) && \
-		so_img_rel_target_prefix=$$(echo $(libdir) | sed 's,\(^/\|\)[^/][^/]*,..,g') && \
-		ln -sf $$so_img_rel_target_prefix$(rootlibdir)/$$so_img_name $(DESTDIR)$(libdir)/libkmod.so && \
-		mv $(DESTDIR)$(libdir)/libkmod.so.* $(DESTDIR)$(rootlibdir); \
-	fi
 if BUILD_TOOLS
 	for tool in insmod lsmod rmmod depmod modprobe modinfo; do \
 		$(LN_S) -f kmod $(DESTDIR)$(bindir)/$$tool; \
@@ -131,7 +124,6 @@ if BUILD_TOOLS
 endif
 
 uninstall-hook:
-	rm -f $(DESTDIR)$(rootlibdir)/libkmod.so*
 if BUILD_TOOLS
 	for tool in insmod lsmod rmmod depmod modprobe modinfo; do \
 		rm -f $(DESTDIR)$(bindir)/$$tool; \
@@ -146,10 +138,16 @@ noinst_SCRIPTS = \
 	tools/modprobe tools/modinfo tools/depmod
 
 tools_kmod_SOURCES = \
-	tools/kmod.c tools/kmod.h tools/lsmod.c \
-	tools/rmmod.c tools/insmod.c \
-	tools/modinfo.c tools/modprobe.c \
-	tools/depmod.c tools/log.h tools/log.c \
+	tools/depmod.c \
+	tools/insmod.c \
+	tools/kmod.c \
+	tools/kmod.h \
+	tools/log.c \
+	tools/log.h \
+	tools/lsmod.c \
+	tools/modinfo.c \
+	tools/modprobe.c \
+	tools/rmmod.c \
 	tools/static-nodes.c
 
 tools_kmod_LDADD = \
@@ -170,20 +168,15 @@ EXTRA_DIST += testsuite/setup-rootfs.sh
 MODULE_PLAYGROUND = testsuite/module-playground
 ROOTFS = testsuite/rootfs
 ROOTFS_PRISTINE = $(top_srcdir)/testsuite/rootfs-pristine
-CREATE_ROOTFS = $(AM_V_GEN) MODULE_DIRECTORY=$(module_directory) $(top_srcdir)/testsuite/setup-rootfs.sh $(ROOTFS_PRISTINE) $(ROOTFS) $(MODULE_PLAYGROUND) $(top_builddir)/config.h $(sysconfdir)
+CREATE_ROOTFS = $(AM_V_GEN) $(top_srcdir)/testsuite/setup-rootfs.sh $(ROOTFS_PRISTINE) $(ROOTFS) $(MODULE_PLAYGROUND) $(top_builddir)/config.h $(sysconfdir) $(module_directory)
 
 build-module-playground:
 	$(AM_V_GEN)if test "$(top_srcdir)" != "$(top_builddir)"; then \
 		$(RM) -rf testsuite/module-playground && \
 		mkdir -p testsuite/ && \
-		cp -r $(top_srcdir)/$(MODULE_PLAYGROUND) $(top_builddir)/$(MODULE_PLAYGROUND) && \
-		find $(top_builddir)/$(MODULE_PLAYGROUND) -type d -exec chmod +w {} \; ; \
+		cp -r $(top_srcdir)/$(MODULE_PLAYGROUND) $(top_builddir)/$(MODULE_PLAYGROUND); \
 		fi
-if BUILD_MODULES
 	$(MAKE) -C $(MODULE_PLAYGROUND)
-else
-	$(MAKE) -C $(MODULE_PLAYGROUND) FAKE_BUILD=1
-endif
 
 
 rootfs: build-module-playground
@@ -199,13 +192,12 @@ TESTSUITE_OVERRIDE_LIBS = \
 	testsuite/init_module.la \
 	testsuite/delete_module.la
 TESTSUITE_OVERRIDE_LIBS_LDFLAGS = \
-	avoid-version -module -shared -export-dynamic -rpath /nowhere -ldl
+	-avoid-version -module -shared -rpath /nowhere -ldl
 
 check-am: rootfs
 
 
 EXTRA_DIST += \
-	testsuite/module-playground/cache \
 	testsuite/module-playground/dummy.pkcs7 \
 	testsuite/module-playground/dummy.sha1 \
 	testsuite/module-playground/dummy.sha256 \
@@ -240,8 +232,6 @@ EXTRA_DIST += \
 check_LTLIBRARIES = $(TESTSUITE_OVERRIDE_LIBS)
 
 testsuite_uname_la_LDFLAGS = $(TESTSUITE_OVERRIDE_LIBS_LDFLAGS)
-testsuite_path_la_CPPFLAGS = $(AM_CPPFLAGS) \
-	-DABS_TOP_BUILDDIR=\"$(abs_top_builddir)\"
 testsuite_path_la_LDFLAGS = $(TESTSUITE_OVERRIDE_LIBS_LDFLAGS)
 
 testsuite_delete_module_la_LDFLAGS = $(TESTSUITE_OVERRIDE_LIBS_LDFLAGS)
@@ -252,7 +242,8 @@ testsuite_init_module_la_LIBADD = libkmod/libkmod-internal.la
 
 TESTSUITE_CPPFLAGS = $(AM_CPPFLAGS) \
 	-DTESTSUITE_ROOTFS=\"$(abs_top_builddir)/$(ROOTFS)/\" \
-	-DABS_TOP_BUILDDIR=\"$(abs_top_builddir)\"
+	-DTOOLS_DIR=\"$(abs_top_builddir)/tools\" \
+	-DOVERRIDE_LIBDIR=\"$(abs_top_builddir)/testsuite/.libs/\"
 TESTSUITE_LDADD = \
 	testsuite/libtestsuite.la libkmod/libkmod-internal.la \
 	shared/libshared.la
@@ -266,17 +257,23 @@ testsuite_libtestsuite_la_CPPFLAGS = $(TESTSUITE_CPPFLAGS)
 testsuite_libtestsuite_la_LIBADD = -lrt
 
 TESTSUITE = \
-	testsuite/test-hash \
 	testsuite/test-array \
-	testsuite/test-scratchbuf \
-	testsuite/test-strbuf \
+	testsuite/test-blacklist \
+	testsuite/test-dependencies \
+	testsuite/test-depmod \
+	testsuite/test-hash \
 	testsuite/test-init \
 	testsuite/test-initstate \
-	testsuite/test-testsuite testsuite/test-loaded \
-	testsuite/test-modinfo testsuite/test-util testsuite/test-new-module \
-	testsuite/test-modprobe testsuite/test-blacklist \
-	testsuite/test-dependencies testsuite/test-depmod \
-	testsuite/test-list testsuite/test-weakdep
+	testsuite/test-list \
+	testsuite/test-loaded \
+	testsuite/test-modinfo \
+	testsuite/test-modprobe \
+	testsuite/test-new-module \
+	testsuite/test-scratchbuf \
+	testsuite/test-strbuf \
+	testsuite/test-testsuite \
+	testsuite/test-util \
+	testsuite/test-weakdep
 
 check_PROGRAMS = $(TESTSUITE)
 TESTS = $(TESTSUITE)
