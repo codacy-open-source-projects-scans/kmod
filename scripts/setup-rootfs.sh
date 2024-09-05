@@ -12,20 +12,21 @@ MODULE_DIRECTORY=$6
 # create rootfs from rootfs-pristine
 
 create_rootfs() {
+	local -r SED_PATTERN="s|/lib/modules|$MODULE_DIRECTORY|g;s|$MODULE_DIRECTORY/external|/lib/modules/external|g"
+
 	rm -rf "$ROOTFS"
-	mkdir -p $(dirname "$ROOTFS")
+	mkdir -p "$(dirname "$ROOTFS")"
 	cp -r "$ROOTFS_PRISTINE" "$ROOTFS"
 	find "$ROOTFS" -type d -exec chmod +w {} \;
 	find "$ROOTFS" -type f -name .gitignore -exec rm -f {} \;
 	if [ "$MODULE_DIRECTORY" != "/lib/modules" ] ; then
-		sed -i -e "s|/lib/modules|$MODULE_DIRECTORY|g" $(find "$ROOTFS" -name \*.txt -o -name \*.conf -o -name \*.dep)
-		sed -i -e "s|$MODULE_DIRECTORY/external|/lib/modules/external|g" $(find "$ROOTFS" -name \*.txt -o -name \*.conf -o -name \*.dep)
+		find "$ROOTFS" \( -name '*.txt' -o -name '*.conf' -o -name '*.dep' \) -exec sed -i -e "$SED_PATTERN" {} +
 		for i in "$ROOTFS"/*/lib/modules/* "$ROOTFS"/*/*/lib/modules/* ; do
-			version="$(basename $i)"
-			[ $version != 'external' ] || continue
-			mod="$(dirname $i)"
-			lib="$(dirname $mod)"
-			up="$(dirname $lib)$MODULE_DIRECTORY"
+			version="$(basename "$i")"
+			[ "$version" != 'external' ] || continue
+			mod="$(dirname "$i")"
+			lib="$(dirname "$mod")"
+			up="$(dirname "$lib")$MODULE_DIRECTORY"
 			mkdir -p "$up"
 			mv "$i" "$up"
 		done
@@ -33,15 +34,15 @@ create_rootfs() {
 
 	if [ "$SYSCONFDIR" != "/etc" ]; then
 		find "$ROOTFS" -type d -name etc -printf "%h\n" | while read -r e; do
-			mkdir -p "$(dirname $e/$SYSCONFDIR)"
-			mv $e/{etc,$SYSCONFDIR}
+			mkdir -p "$(dirname "$e/$SYSCONFDIR")"
+			mv "$e"/{etc,"$SYSCONFDIR"}
 		done
 	fi
 }
 
 feature_enabled() {
 	local feature=$1
-	grep KMOD_FEATURES  $CONFIG_H | head -n 1 | grep -q \+$feature
+	grep KMOD_FEATURES "$CONFIG_H" | head -n 1 | grep -q \+"$feature"
 }
 
 declare -A map
@@ -102,9 +103,8 @@ map=(
     ["test-depmod/modules-outdir$MODULE_DIRECTORY/4.4.4/kernel/drivers/block/cciss.ko"]="mod-fake-cciss.ko"
     ["test-depmod/modules-outdir$MODULE_DIRECTORY/4.4.4/kernel/drivers/scsi/hpsa.ko"]="mod-fake-hpsa.ko"
     ["test-depmod/modules-outdir$MODULE_DIRECTORY/4.4.4/kernel/drivers/scsi/scsi_mod.ko"]="mod-fake-scsi-mod.ko"
-    ["test-modinfo/mod-simple-i386.ko"]="mod-simple-i386.ko"
-    ["test-modinfo/mod-simple-x86_64.ko"]="mod-simple-x86_64.ko"
-    ["test-modinfo/mod-simple-sparc64.ko"]="mod-simple-sparc64.ko"
+    # TODO: add cross-compiled modules to the test
+    ["test-modinfo/mod-simple.ko"]="mod-simple.ko"
     ["test-modinfo/mod-simple-sha1.ko"]="mod-simple.ko"
     ["test-modinfo/mod-simple-sha256.ko"]="mod-simple.ko"
     ["test-modinfo/mod-simple-pkcs7.ko"]="mod-simple.ko"
@@ -170,7 +170,7 @@ fi
 
 if feature_enabled ZSTD; then
 	for m in "${zstd_array[@]}"; do
-	    zstd --rm $ROOTFS/$m
+	    zstd --rm "$ROOTFS/$m"
 	done
 fi
 

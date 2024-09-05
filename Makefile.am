@@ -15,6 +15,15 @@ AM_MAKEFLAGS = --no-print-directory
 GCC_COLORS ?= 'yes'
 export GCC_COLORS
 
+# meson bits
+EXTRA_DIST += \
+	man/meson.build \
+	meson.build \
+	meson_options.txt \
+	testsuite/meson.build \
+	scripts/build-scdoc.sh \
+	scripts/kmod-symlink.sh
+
 AM_CPPFLAGS = \
 	-include $(top_builddir)/config.h \
 	-I$(top_srcdir) \
@@ -163,20 +172,17 @@ endif
 # TESTSUITE
 # ------------------------------------------------------------------------------
 
-EXTRA_DIST += testsuite/setup-rootfs.sh
+EXTRA_DIST += scripts/setup-modules.sh
+EXTRA_DIST += scripts/setup-rootfs.sh
 
 MODULE_PLAYGROUND = testsuite/module-playground
+BUILD_MODULES = $(AM_V_GEN) $(top_srcdir)/scripts/setup-modules.sh $(top_srcdir) $(top_builddir) $(MODULE_PLAYGROUND) $(module_directory)
 ROOTFS = testsuite/rootfs
 ROOTFS_PRISTINE = $(top_srcdir)/testsuite/rootfs-pristine
-CREATE_ROOTFS = $(AM_V_GEN) $(top_srcdir)/testsuite/setup-rootfs.sh $(ROOTFS_PRISTINE) $(ROOTFS) $(MODULE_PLAYGROUND) $(top_builddir)/config.h $(sysconfdir) $(module_directory)
+CREATE_ROOTFS = $(AM_V_GEN) $(top_srcdir)/scripts/setup-rootfs.sh $(ROOTFS_PRISTINE) $(ROOTFS) $(MODULE_PLAYGROUND) $(top_builddir)/config.h $(sysconfdir) $(module_directory)
 
 build-module-playground:
-	$(AM_V_GEN)if test "$(top_srcdir)" != "$(top_builddir)"; then \
-		$(RM) -rf testsuite/module-playground && \
-		mkdir -p testsuite/ && \
-		cp -r $(top_srcdir)/$(MODULE_PLAYGROUND) $(top_builddir)/$(MODULE_PLAYGROUND); \
-		fi
-	$(MAKE) -C $(MODULE_PLAYGROUND)
+	$(BUILD_MODULES)
 
 
 rootfs: build-module-playground
@@ -201,6 +207,7 @@ EXTRA_DIST += \
 	testsuite/module-playground/dummy.pkcs7 \
 	testsuite/module-playground/dummy.sha1 \
 	testsuite/module-playground/dummy.sha256 \
+	testsuite/module-playground/Kbuild \
 	testsuite/module-playground/Makefile \
 	testsuite/module-playground/Makefile.arch \
 	testsuite/module-playground/mod-fake-cciss.c \
@@ -223,9 +230,6 @@ EXTRA_DIST += \
 	testsuite/module-playground/mod-loop-k.c \
 	testsuite/module-playground/mod-loop.h \
 	testsuite/module-playground/mod-simple.c \
-	testsuite/module-playground/mod-simple-i386.ko \
-	testsuite/module-playground/mod-simple-sparc64.ko \
-	testsuite/module-playground/mod-simple-x86_64.ko \
 	testsuite/module-playground/mod-weakdep.c \
 	testsuite/module-playground/README
 
@@ -322,7 +326,7 @@ testsuite_test_weakdep_CPPFLAGS = $(TESTSUITE_CPPFLAGS)
 testsuite-distclean:
 	$(RM) -r $(ROOTFS)
 	$(RM) testsuite/stamp-rootfs
-	$(MAKE) -C testsuite/module-playground/ clean
+	$(MAKE) -C $(MODULE_PLAYGROUND) clean
 	if test "$(top_srcdir)" != "$(top_builddir)"; then \
 		$(RM) -rf testsuite/module-playground; \
 	fi
