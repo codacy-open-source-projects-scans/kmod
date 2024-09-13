@@ -47,6 +47,10 @@ CC_CHECK_FUNC_BUILTIN([__builtin_types_compatible_p])
 CC_CHECK_FUNC_BUILTIN([__builtin_uaddl_overflow], [ ], [ ])
 CC_CHECK_FUNC_BUILTIN([__builtin_uaddll_overflow], [ ], [ ])
 
+# Non glibc compilers (musl and newer versions of bionic) do not need
+# the 64 LFS API wrapping.
+AC_CHECK_DECLS_ONCE([[__GLIBC__]], [], [], [[#include <features.h>]])
+
 # dietlibc doesn't have st.st_mtim struct member
 AC_CHECK_MEMBERS([struct stat.st_mtim], [], [], [#include <sys/stat.h>])
 
@@ -262,7 +266,6 @@ CC_CHECK_FLAGS_APPEND(with_cflags, [CFLAGS], [\
 		       -Wno-overlength-strings \
 		       -Wno-unused-parameter \
 		       -Wno-missing-field-initializers \
-		       -Wno-unused-result \
 		       -Wnested-externs \
 		       -Wchar-subscripts \
 		       -Wtype-limits \

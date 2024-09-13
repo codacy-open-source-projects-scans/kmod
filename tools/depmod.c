@@ -36,39 +36,39 @@
 #define DEFAULT_VERBOSE LOG_WARNING
 static int verbose = DEFAULT_VERBOSE;
 
+static const char *module_directory = MODULE_DIRECTORY;
 static const char CFG_BUILTIN_KEY[] = "built-in";
 static const char CFG_EXTERNAL_KEY[] = "external";
 static const char *const default_cfg_paths[] = {
+	// clang-format off
 	SYSCONFDIR "/depmod.d",
 	"/run/depmod.d",
 	"/usr/local/lib/depmod.d",
 	DISTCONFDIR "/depmod.d",
 	"/lib/depmod.d",
-	NULL
+	NULL,
+	// clang-format on
 };
 
-static const char cmdopts_s[] = "aAb:o:C:E:F:euqrvnP:wmVh";
+static const char cmdopts_s[] = "aAb:m:o:C:E:F:evnP:wVh";
 static const struct option cmdopts[] = {
 	{ "all", no_argument, 0, 'a' },
 	{ "quick", no_argument, 0, 'A' },
 	{ "basedir", required_argument, 0, 'b' },
+	{ "moduledir", required_argument, 0, 'm' },
 	{ "outdir", required_argument, 0, 'o' },
 	{ "config", required_argument, 0, 'C' },
 	{ "symvers", required_argument, 0, 'E' },
 	{ "filesyms", required_argument, 0, 'F' },
 	{ "errsyms", no_argument, 0, 'e' },
-	{ "unresolved-error", no_argument, 0, 'u' }, /* deprecated */
-	{ "quiet", no_argument, 0, 'q' }, /* deprecated */
-	{ "root", no_argument, 0, 'r' }, /* deprecated */
 	{ "verbose", no_argument, 0, 'v' },
 	{ "show", no_argument, 0, 'n' },
 	{ "dry-run", no_argument, 0, 'n' },
 	{ "symbol-prefix", required_argument, 0, 'P' },
 	{ "warn", no_argument, 0, 'w' },
-	{ "map", no_argument, 0, 'm' }, /* deprecated */
 	{ "version", no_argument, 0, 'V' },
 	{ "help", no_argument, 0, 'h' },
-	{ }
+	{ },
 };
 
 static void help(void)
@@ -93,8 +93,9 @@ static void help(void)
 		"\t-h, --help           show this help\n"
 		"\n"
 		"The following options are useful for people managing distributions:\n"
-		"\t-b, --basedir=DIR    Use an image of a module tree.\n"
-		"\t-o, --outdir=DIR     Output directory for generated files.\n"
+		"\t-b, --basedir=DIR    Root path (default: /).\n"
+		"\t-m, --moduledir=DIR  Module directory (default: " MODULE_DIRECTORY ").\n"
+		"\t-o, --outdir=DIR     Output root path (default: same as <basedir>).\n"
 		"\t-F, --filesyms=FILE  Use the file instead of the\n"
 		"\t                     current kernel symbols.\n"
 		"\t-E, --symvers=FILE   Use Module.symvers file to check\n"
@@ -407,7 +408,7 @@ struct cfg_override {
 enum search_type {
 	SEARCH_PATH,
 	SEARCH_BUILTIN,
-	SEARCH_EXTERNAL
+	SEARCH_EXTERNAL,
 };
 
 struct cfg_search {
@@ -2579,7 +2580,7 @@ static int depmod_output(struct depmod *depmod, FILE *out)
 		{ "modules.builtin.bin", output_builtin_bin },
 		{ "modules.builtin.alias.bin", output_builtin_alias_bin },
 		{ "modules.devname", output_devname },
-		{ }
+		{ },
 	};
 	const char *dname = depmod->cfg->outdirname;
 	int dfd, err = 0;
@@ -2941,6 +2942,9 @@ static int do_depmod(int argc, char *argv[])
 				goto cmdline_failed;
 			}
 			break;
+		case 'm':
+			module_directory = optarg;
+			break;
 		case 'o':
 			free(out_root);
 			out_root = path_make_absolute_cwd(optarg);
@@ -2988,17 +2992,6 @@ static int do_depmod(int argc, char *argv[])
 		case 'w':
 			cfg.warn_dups = 1;
 			break;
-		case 'u':
-		case 'q':
-		case 'r':
-		case 'm':
-			if (idx > 0)
-				WRN("Ignored deprecated option --%s\n",
-				    cmdopts[idx].name);
-			else
-				WRN("Ignored deprecated option -%c\n", c);
-
-			break;
 		case 'h':
 			help();
 			return EXIT_SUCCESS;
@@ -3030,12 +3023,12 @@ static int do_depmod(int argc, char *argv[])
 	}
 
 	cfg.dirnamelen = snprintf(cfg.dirname, PATH_MAX,
-				  "%s" MODULE_DIRECTORY "/%s",
-				  root ?: "", cfg.kversion);
+				  "%s%s/%s",
+				  root ?: "", module_directory, cfg.kversion);
 
 	cfg.outdirnamelen = snprintf(cfg.outdirname, PATH_MAX,
-				     "%s" MODULE_DIRECTORY "/%s",
-				     out_root ?: (root ?: ""), cfg.kversion);
+				     "%s%s/%s",
+				     out_root ?: (root ?: ""), module_directory, cfg.kversion);
 
 	if (optind == argc)
 		all = 1;

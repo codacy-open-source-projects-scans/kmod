@@ -61,6 +61,12 @@ foreach tuple : _builtins
   cdata.set10('HAVE_@0@'.format(builtin.to_upper()), have)
 endforeach
 
+# Check for __GLIBC__ as short-cut for the LFS64 wrappers
+glibc = cc.has_header_symbol('features.h', '__GLIBC__')
+# XXX: once meson only, rename the define to something more sensible ...
+# NEED_64_WRAPPERS perhaps?
+cdata.set10('HAVE_DECL___GLIBC__', glibc)
+
 # dietlibc doesn't have st.st_mtim struct member
 # XXX: we use both st_mtim and st_mtime ... unify and test
 foreach tuple : [['struct stat', 'st_mtim', '#include <sys/stat.h>']]
@@ -130,7 +136,6 @@ add_project_arguments(
     '-Wno-overlength-strings',
     '-Wno-unused-parameter',
     '-Wno-missing-field-initializers',
-    '-Wno-unused-result',
     '-Wnested-externs',
     '-Wchar-subscripts',
     '-Wtype-limits',
@@ -396,6 +401,18 @@ foreach tool : _tools
   endif
 endforeach
 
+internal_kmod_symlinks = []
+
+foreach tool : _tools
+  internal_kmod_symlinks += custom_target(
+    tool,
+    command : ['ln', '-sf', kmod, '@OUTPUT@'],
+    output : tool,
+    depends : kmod,
+    build_by_default : true,
+  )
+endforeach
+
 # ------------------------------------------------------------------------------
 # TESTSUITE
 # ------------------------------------------------------------------------------
@@ -416,6 +433,11 @@ if get_option('manpages')
   subdir('man')
 endif
 
+if get_option('docs')
+  test_gtkdoc = find_program('scripts/test-gtkdoc.sh')
+  subdir('libkmod/docs')
+endif
+
 summary({
   'moduledir'   : moduledir,
   'prefix'      : get_option('prefix'),
@@ -427,11 +449,12 @@ summary({
 }, section : 'Directories')
 
 summary({
-  'tools'       : get_option('tools'),
-  'logging'     : get_option('logging'),
-  'debug'       : get_option('debug-messages'),
-  'build-tests' : get_option('build-tests'),
-  'man'         : get_option('manpages'),
+  'tools'           : get_option('tools'),
+  'logging'         : get_option('logging'),
+  'debug-messages'  : get_option('debug-messages'),
+  'build-tests'     : get_option('build-tests'),
+  'manpages'        : get_option('manpages'),
+  'docs'            : get_option('docs'),
 }, section : 'Options')
 
 summary({

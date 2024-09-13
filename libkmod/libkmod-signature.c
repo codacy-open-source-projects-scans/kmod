@@ -25,7 +25,7 @@
 enum pkey_algo {
 	PKEY_ALGO_DSA,
 	PKEY_ALGO_RSA,
-	PKEY_ALGO__LAST
+	PKEY_ALGO__LAST,
 };
 
 static const char *const pkey_algo[PKEY_ALGO__LAST] = {
@@ -43,26 +43,28 @@ enum pkey_hash_algo {
 	PKEY_HASH_SHA512,
 	PKEY_HASH_SHA224,
 	PKEY_HASH_SM3,
-	PKEY_HASH__LAST
+	PKEY_HASH__LAST,
 };
 
 const char *const pkey_hash_algo[PKEY_HASH__LAST] = {
-	[PKEY_HASH_MD4]		= "md4",
-	[PKEY_HASH_MD5]		= "md5",
-	[PKEY_HASH_SHA1]	= "sha1",
-	[PKEY_HASH_RIPE_MD_160]	= "rmd160",
-	[PKEY_HASH_SHA256]	= "sha256",
-	[PKEY_HASH_SHA384]	= "sha384",
-	[PKEY_HASH_SHA512]	= "sha512",
-	[PKEY_HASH_SHA224]	= "sha224",
-	[PKEY_HASH_SM3]		= "sm3",
+	// clang-format off
+	[PKEY_HASH_MD4] = "md4",
+	[PKEY_HASH_MD5] = "md5",
+	[PKEY_HASH_SHA1] = "sha1",
+	[PKEY_HASH_RIPE_MD_160] = "rmd160",
+	[PKEY_HASH_SHA256] = "sha256",
+	[PKEY_HASH_SHA384] = "sha384",
+	[PKEY_HASH_SHA512] = "sha512",
+	[PKEY_HASH_SHA224] = "sha224",
+	[PKEY_HASH_SM3] = "sm3",
+	// clang-format on
 };
 
 enum pkey_id_type {
 	PKEY_ID_PGP,		/* OpenPGP generated key ID */
 	PKEY_ID_X509,		/* X.509 arbitrary subjectKeyIdentifier */
 	PKEY_ID_PKCS7,		/* Signature in PKCS#7 message */
-	PKEY_ID_TYPE__LAST
+	PKEY_ID_TYPE__LAST,
 };
 
 const char *const pkey_id_type[PKEY_ID_TYPE__LAST] = {
@@ -326,7 +328,7 @@ bool kmod_module_signature_info(const struct kmod_file *file, struct kmod_signat
 		return false;
 	sig_len = be32toh(get_unaligned(&modsig->sig_len));
 	if (sig_len == 0 ||
-	    size < (int64_t)(modsig->signer_len + modsig->key_id_len + sig_len))
+	    size < (int64_t)sig_len + modsig->signer_len + modsig->key_id_len)
 		return false;
 
 	switch (modsig->id_type) {

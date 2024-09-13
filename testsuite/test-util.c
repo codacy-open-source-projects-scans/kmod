@@ -20,12 +20,14 @@
 static int alias_1(const struct test *t)
 {
 	static const char *const input[] = {
+		// clang-format off
 		"test1234",
 		"test[abcfoobar]2211",
 		"bar[aaa][bbbb]sss",
 		"kmod[p.b]lib",
 		"[az]1234[AZ]",
 		NULL,
+		// clang-format on
 	};
 
 	char buf[PATH_MAX];
@@ -100,9 +102,7 @@ static int test_strchr_replace(const struct test *t)
 	return EXIT_SUCCESS;
 }
 DEFINE_TEST(test_strchr_replace,
-	.description = "check implementation of strchr_replace()",
-	.need_spawn = false,
-	);
+	.description = "check implementation of strchr_replace()")
 
 static int test_underscores(const struct test *t)
 {
@@ -116,21 +116,19 @@ static int test_underscores(const struct test *t)
 		{ strdup("-aa-[bb]-cc-"), "_aa_[bb]_cc_" },
 		{ strdup("-aa-[b-b]-cc-"), "_aa_[b-b]_cc_" },
 		{ strdup("-aa-b[-]b-cc"), "_aa_b[-]b_cc" },
-		{ }
+		{ },
 	}, *iter;
 
 	for (iter = &teststr[0]; iter->val != NULL; iter++) {
 		_cleanup_free_ char *val = iter->val;
-		underscores(val);
+		assert_return(!underscores(val), EXIT_FAILURE);
 		assert_return(streq(val, iter->res), EXIT_FAILURE);
 	}
 
 	return EXIT_SUCCESS;
 }
 DEFINE_TEST(test_underscores,
-	.description = "check implementation of underscores()",
-	.need_spawn = false,
-	);
+	.description = "check implementation of underscores()")
 
 static int test_path_ends_with_kmod_ext(const struct test *t)
 {
@@ -152,7 +150,7 @@ static int test_path_ends_with_kmod_ext(const struct test *t)
 		{ "/bla.ko.", false },
 		{ "/bla.koz", false },
 		{ "/b", false },
-		{ }
+		{ },
 	}, *iter;
 
 	for (iter = &teststr[0]; iter->val != NULL; iter++) {
@@ -164,9 +162,7 @@ static int test_path_ends_with_kmod_ext(const struct test *t)
 	return EXIT_SUCCESS;
 }
 DEFINE_TEST(test_path_ends_with_kmod_ext,
-	.description = "check implementation of path_ends_with_kmod_ext()",
-	.need_spawn = false,
-	);
+	.description = "check implementation of path_ends_with_kmod_ext()")
 
 #define TEST_WRITE_STR_SAFE_FILE "/write-str-safe"
 #define TEST_WRITE_STR_SAFE_PATH TESTSUITE_ROOTFS "test-util2/" TEST_WRITE_STR_SAFE_FILE
@@ -193,7 +189,7 @@ DEFINE_TEST(test_write_str_safe,
 		.files = (const struct keyval[]) {
 			{ TEST_WRITE_STR_SAFE_PATH ".txt",
 			  TEST_WRITE_STR_SAFE_PATH "-correct.txt" },
-			{ }
+			{ },
 		},
 	});
 
@@ -212,9 +208,7 @@ static int test_addu64_overflow(const struct test *t)
 	return EXIT_SUCCESS;
 }
 DEFINE_TEST(test_addu64_overflow,
-	.description = "check implementation of addu4_overflow()",
-	.need_spawn = false,
-	);
+	.description = "check implementation of addu4_overflow()")
 
 
 static int test_backoff_time(const struct test *t)
@@ -253,9 +247,7 @@ static int test_backoff_time(const struct test *t)
 	return EXIT_SUCCESS;
 }
 DEFINE_TEST(test_backoff_time,
-	.description = "check implementation of get_backoff_delta_msec()",
-	.need_spawn = false,
-	);
+	.description = "check implementation of get_backoff_delta_msec()")
 
 
 TESTSUITE_MAIN();
