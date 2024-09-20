@@ -52,6 +52,8 @@ struct kmod_ctx;
  * release the resources of the kmod library context.
  *
  * Returns: a new kmod library context
+ *
+ * Since: 1
  */
 struct kmod_ctx *kmod_new(const char *dirname, const char * const *config_paths);
 
@@ -62,6 +64,8 @@ struct kmod_ctx *kmod_new(const char *dirname, const char * const *config_paths)
  * Take a reference of the kmod library context.
  *
  * Returns: the passed kmod library context
+ *
+ * Since: 1
  */
 struct kmod_ctx *kmod_ref(struct kmod_ctx *ctx);
 
@@ -73,6 +77,8 @@ struct kmod_ctx *kmod_ref(struct kmod_ctx *ctx);
  * reaches zero, the resources of the context will be released.
  *
  * Returns: the passed kmod library context or NULL if it's freed
+ *
+ * Since: 1
  */
 struct kmod_ctx *kmod_unref(struct kmod_ctx *ctx);
 
@@ -91,6 +97,8 @@ struct kmod_ctx *kmod_unref(struct kmod_ctx *ctx);
  * this function will speedup the searches.
  *
  * Returns: 0 on success or < 0 otherwise.
+ *
+ * Since: 1
  */
 int kmod_load_resources(struct kmod_ctx *ctx);
 
@@ -108,6 +116,8 @@ int kmod_load_resources(struct kmod_ctx *ctx);
  * could free the resources by calling kmod_unload_resources().
  *
  * Returns: 0 on success or < 0 otherwise.
+ *
+ * Since: 1
  */
 void kmod_unload_resources(struct kmod_ctx *ctx);
 
@@ -136,6 +146,8 @@ enum kmod_resources {
  * context is not valid anymore.
  *
  * Returns: the resources state, valid states are #kmod_resources.
+ *
+ * Since: 3
  */
 int kmod_validate_resources(struct kmod_ctx *ctx);
 
@@ -170,6 +182,8 @@ enum kmod_index {
  * order.
  *
  * Returns: 0 on success or < 0 otherwise.
+ *
+ * Since: 4
  */
 int kmod_dump_index(struct kmod_ctx *ctx, enum kmod_index type, int fd);
 
@@ -181,6 +195,8 @@ int kmod_dump_index(struct kmod_ctx *ctx, enum kmod_index type, int fd);
  *
  * Set the current logging priority, as defined in syslog.h(0P). The value
  * controls which messages are logged.
+ *
+ * Since: 1
  */
 void kmod_set_log_priority(struct kmod_ctx *ctx, int priority);
 
@@ -191,6 +207,8 @@ void kmod_set_log_priority(struct kmod_ctx *ctx, int priority);
  * Get the current logging priority, as defined in syslog.h(0P).
  *
  * Returns: the current logging priority
+ *
+ * Since: 1
  */
 int kmod_get_log_priority(const struct kmod_ctx *ctx);
 
@@ -203,6 +221,8 @@ int kmod_get_log_priority(const struct kmod_ctx *ctx);
  * The built-in logging writes to stderr. It can be
  * overridden by a custom function, to plug log messages
  * into the user's logging functionality.
+ *
+ * Since: 1
  */
 void kmod_set_log_fn(struct kmod_ctx *ctx,
 			void (*log_fn)(void *log_data,
@@ -217,6 +237,8 @@ void kmod_set_log_fn(struct kmod_ctx *ctx,
  * @userdata: data pointer
  *
  * Store custom @userdata in the library context.
+ *
+ * Since: 1
  */
 void kmod_set_userdata(struct kmod_ctx *ctx, const void *userdata);
 
@@ -228,6 +250,8 @@ void kmod_set_userdata(struct kmod_ctx *ctx, const void *userdata);
  * to access from callbacks.
  *
  * Returns: stored userdata
+ *
+ * Since: 1
  */
 void *kmod_get_userdata(const struct kmod_ctx *ctx);
 
@@ -237,6 +261,8 @@ void *kmod_get_userdata(const struct kmod_ctx *ctx);
  *
  * Retrieve the absolute path used for linux modules in this context. The path
  * is computed from the arguments to kmod_new().
+ *
+ * Since: 22
  */
 const char *kmod_get_dirname(const struct kmod_ctx *ctx);
 
@@ -292,6 +318,8 @@ struct kmod_list;
  * expected, and this is what differentiates from kmod_list_prev()).
  *
  * Returns: last node at @list or NULL if the list is empty.
+ *
+ * Since: 2
  */
 struct kmod_list *kmod_list_last(const struct kmod_list *list);
 
@@ -307,6 +335,8 @@ struct kmod_list *kmod_list_last(const struct kmod_list *list);
  *
  * Returns: node next to @curr or NULL if either this node is the last of or
  * list is empty.
+ *
+ * Since: 1
  */
 struct kmod_list *kmod_list_next(const struct kmod_list *list,
 						const struct kmod_list *curr);
@@ -323,6 +353,8 @@ struct kmod_list *kmod_list_next(const struct kmod_list *list,
  *
  * Returns: node previous to @curr or NULL if either this node is the head of
  * the list or the list is empty.
+ *
+ * Since: 1
  */
 struct kmod_list *kmod_list_prev(const struct kmod_list *list,
 						const struct kmod_list *curr);
@@ -355,6 +387,8 @@ struct kmod_config_iter;
  *
  * Returns: a new iterator over the blacklists or NULL on failure. Free it
  * with kmod_config_iter_free_iter().
+ *
+ * Since: 4
  */
 struct kmod_config_iter *kmod_config_get_blacklists(const struct kmod_ctx *ctx);
 
@@ -369,6 +403,8 @@ struct kmod_config_iter *kmod_config_get_blacklists(const struct kmod_ctx *ctx);
  *
  * Returns: a new iterator over the install commands or NULL on failure. Free
  * it with kmod_config_iter_free_iter().
+ *
+ * Since: 4
  */
 struct kmod_config_iter *kmod_config_get_install_commands(const struct kmod_ctx *ctx);
 
@@ -383,6 +419,8 @@ struct kmod_config_iter *kmod_config_get_install_commands(const struct kmod_ctx 
  *
  * Returns: a new iterator over the remove commands or NULL on failure. Free
  * it with kmod_config_iter_free_iter().
+ *
+ * Since: 4
  */
 struct kmod_config_iter *kmod_config_get_remove_commands(const struct kmod_ctx *ctx);
 
@@ -397,6 +435,8 @@ struct kmod_config_iter *kmod_config_get_remove_commands(const struct kmod_ctx *
  *
  * Returns: a new iterator over the aliases or NULL on failure. Free it with
  * kmod_config_iter_free_iter().
+ *
+ * Since: 4
  */
 struct kmod_config_iter *kmod_config_get_aliases(const struct kmod_ctx *ctx);
 
@@ -411,6 +451,8 @@ struct kmod_config_iter *kmod_config_get_aliases(const struct kmod_ctx *ctx);
  *
  * Returns: a new iterator over the options or NULL on failure. Free it with
  * kmod_config_iter_free_iter().
+ *
+ * Since: 4
  */
 struct kmod_config_iter *kmod_config_get_options(const struct kmod_ctx *ctx);
 
@@ -425,6 +467,8 @@ struct kmod_config_iter *kmod_config_get_options(const struct kmod_ctx *ctx);
  *
  * Returns: a new iterator over the softdeps or NULL on failure. Free it with
  * kmod_config_iter_free_iter().
+ *
+ * Since: 4
  */
 struct kmod_config_iter *kmod_config_get_softdeps(const struct kmod_ctx *ctx);
 
@@ -439,6 +483,8 @@ struct kmod_config_iter *kmod_config_get_softdeps(const struct kmod_ctx *ctx);
  *
  * Returns: a new iterator over the weakdeps or NULL on failure. Free it with
  * kmod_config_iter_free_iter().
+ *
+ * Since: 33
  */
 struct kmod_config_iter *kmod_config_get_weakdeps(const struct kmod_ctx *ctx);
 
@@ -451,6 +497,8 @@ struct kmod_config_iter *kmod_config_get_weakdeps(const struct kmod_ctx *ctx);
  * valid.
  *
  * Returns: the key of the current configuration pointed by @iter.
+ *
+ * Since: 4
  */
 const char *kmod_config_iter_get_key(const struct kmod_config_iter *iter);
 
@@ -463,6 +511,8 @@ const char *kmod_config_iter_get_key(const struct kmod_config_iter *iter);
  * valid.
  *
  * Returns: the value of the current configuration pointed by @iter.
+ *
+ * Since: 4
  */
 const char *kmod_config_iter_get_value(const struct kmod_config_iter *iter);
 
@@ -477,6 +527,8 @@ const char *kmod_config_iter_get_value(const struct kmod_config_iter *iter);
  *
  * Returns: true if next position of @iter is valid or false if its end is
  * reached.
+ *
+ * Since: 4
  */
 bool kmod_config_iter_next(struct kmod_config_iter *iter);
 
@@ -485,6 +537,8 @@ bool kmod_config_iter_next(struct kmod_config_iter *iter);
  * @iter: iterator over a certain configuration
  *
  * Free resources used by the iterator.
+ *
+ * Since: 4
  */
 void kmod_config_iter_free_iter(struct kmod_config_iter *iter);
 
@@ -530,6 +584,8 @@ struct kmod_module;
  * Returns: 0 on success or < 0 otherwise. It fails if any of the lookup
  * methods failed, which is basically due to memory allocation fail. If module
  * is not found, it still returns 0, but @list is an empty list.
+ *
+ * Since: 1
  */
 int kmod_module_new_from_lookup(struct kmod_ctx *ctx, const char *given_alias,
 						struct kmod_list **list);
@@ -557,6 +613,8 @@ int kmod_module_new_from_lookup(struct kmod_ctx *ctx, const char *given_alias,
  * Returns: 0 on success or < 0 otherwise. It fails if any of the lookup
  * methods failed, which is basically due to memory allocation failure. If
  * module is not found, it still returns 0, but @mod is left untouched.
+ *
+ * Since: 30
  */
 int kmod_module_new_from_name_lookup(struct kmod_ctx *ctx,
 				     const char *modname,
@@ -583,6 +641,8 @@ int kmod_module_new_from_name_lookup(struct kmod_ctx *ctx,
  *
  * Returns: 0 on success or < 0 otherwise. It fails if name is not a valid
  * module name or if memory allocation failed.
+ *
+ * Since: 1
  */
 int kmod_module_new_from_name(struct kmod_ctx *ctx, const char *name,
 						struct kmod_module **mod);
@@ -607,6 +667,8 @@ int kmod_module_new_from_name(struct kmod_ctx *ctx, const char *name,
  *
  * Returns: 0 on success or < 0 otherwise. It fails if file does not exist, if
  * it's not a valid file for a kmod_module or if memory allocation failed.
+ *
+ * Since: 1
  */
 int kmod_module_new_from_path(struct kmod_ctx *ctx, const char *path,
 						struct kmod_module **mod);
@@ -619,6 +681,8 @@ int kmod_module_new_from_path(struct kmod_ctx *ctx, const char *path,
  * Take a reference of the kmod module, incrementing its refcount.
  *
  * Returns: the passed @module with its refcount incremented.
+ *
+ * Since: 1
  */
 struct kmod_module *kmod_module_ref(struct kmod_module *mod);
 
@@ -631,6 +695,8 @@ struct kmod_module *kmod_module_ref(struct kmod_module *mod);
  *
  * Returns: NULL if @mod is NULL or if the module was released. Otherwise it
  * returns the passed @mod with its refcount decremented.
+ *
+ * Since: 1
  */
 struct kmod_module *kmod_module_unref(struct kmod_module *mod);
 
@@ -642,6 +708,8 @@ struct kmod_module *kmod_module_unref(struct kmod_module *mod);
  * taken by the list itself.
  *
  * Returns: 0
+ *
+ * Since: 1
  */
 int kmod_module_unref_list(struct kmod_list *list);
 
@@ -670,6 +738,8 @@ enum kmod_insert {
  *
  * Returns: 0 on success or < 0 on failure. If module is already loaded it
  * returns -EEXIST.
+ *
+ * Since: 1
  */
 int kmod_module_insert_module(struct kmod_module *mod, unsigned int flags,
 							const char *options);
@@ -734,6 +804,8 @@ enum kmod_probe {
  *
  * Returns: 0 on success, > 0 if stopped by a reason given in @flags or < 0 on
  * failure.
+ *
+ * Since: 3
  */
 int kmod_module_probe_insert_module(struct kmod_module *mod,
 			unsigned int flags, const char *extra_options,
@@ -768,6 +840,8 @@ enum kmod_remove {
  * Remove a module from the kernel.
  *
  * Returns: 0 on success or < 0 on failure.
+ *
+ * Since: 1
  */
 int kmod_module_remove_module(struct kmod_module *mod, unsigned int flags);
 
@@ -783,6 +857,8 @@ int kmod_module_remove_module(struct kmod_module *mod, unsigned int flags);
  *
  * Returns: NULL on failure or the kmod_module contained in this list entry
  * with its refcount incremented.
+ *
+ * Since: 1
  */
 struct kmod_module *kmod_module_get_module(const struct kmod_list *entry);
 
@@ -796,6 +872,8 @@ struct kmod_module *kmod_module_get_module(const struct kmod_list *entry);
  *
  * Returns: NULL on failure. Otherwise it returns a list of kmod modules
  * that can be released by calling kmod_module_unref_list().
+ *
+ * Since: 1
  */
 struct kmod_list *kmod_module_get_dependencies(const struct kmod_module *mod);
 
@@ -815,6 +893,8 @@ struct kmod_list *kmod_module_get_dependencies(const struct kmod_module *mod);
  * should be unreferenced with kmod_module_unref_list().
  *
  * Returns: 0 on success or < 0 otherwise.
+ *
+ * Since: 2
  */
 int kmod_module_get_softdeps(const struct kmod_module *mod,
 				struct kmod_list **pre, struct kmod_list **post);
@@ -834,6 +914,8 @@ int kmod_module_get_softdeps(const struct kmod_module *mod,
  * should be unreferenced with kmod_module_unref_list().
  *
  * Returns: 0 on success or < 0 otherwise.
+ *
+ * Since: 33
  */
 int kmod_module_get_weakdeps(const struct kmod_module *mod,
 				struct kmod_list **weak);
@@ -862,6 +944,8 @@ enum kmod_filter {
  *
  * Returns: 0 on success or < 0 otherwise. @output is saved with the updated
  * list.
+ *
+ * Since: 6
  */
 int kmod_module_apply_filter(const struct kmod_ctx *ctx,
 					enum kmod_filter filter_type,
@@ -881,6 +965,8 @@ int kmod_module_apply_filter(const struct kmod_ctx *ctx,
  *
  * Returns: 0 on success or < 0 otherwise. @output is saved with the updated
  * list.
+ *
+ * Since: 1
  */
 int kmod_module_get_filtered_blacklist(const struct kmod_ctx *ctx,
 					const struct kmod_list *input,
@@ -899,6 +985,8 @@ int kmod_module_get_filtered_blacklist(const struct kmod_ctx *ctx,
  *
  * Returns: a string with all install commands separated by semicolons. This
  * string is owned by @mod, do not free it.
+ *
+ * Since: 1
  */
 const char *kmod_module_get_install_commands(const struct kmod_module *mod);
 
@@ -915,6 +1003,8 @@ const char *kmod_module_get_install_commands(const struct kmod_module *mod);
  *
  * Returns: a string with all remove commands separated by semicolons. This
  * string is owned by @mod, do not free it.
+ *
+ * Since: 1
  */
 const char *kmod_module_get_remove_commands(const struct kmod_module *mod);
 
@@ -927,6 +1017,8 @@ const char *kmod_module_get_remove_commands(const struct kmod_module *mod);
  * it's always normalized (dashes are replaced with underscores).
  *
  * Returns: the name of this kmod module.
+ *
+ * Since: 1
  */
 const char *kmod_module_get_name(const struct kmod_module *mod);
 
@@ -940,6 +1032,8 @@ const char *kmod_module_get_name(const struct kmod_module *mod);
  *
  * Returns: a string with all the options separated by spaces. This string is
  * owned by @mod, do not free it.
+ *
+ * Since: 1
  */
 const char *kmod_module_get_options(const struct kmod_module *mod);
 
@@ -953,6 +1047,8 @@ const char *kmod_module_get_options(const struct kmod_module *mod);
  *
  * Returns: the path of this kmod module or NULL if such information is not
  * available.
+ *
+ * Since: 1
  */
 const char *kmod_module_get_path(const struct kmod_module *mod);
 
@@ -972,6 +1068,8 @@ const char *kmod_module_get_path(const struct kmod_module *mod);
  * kmod_module_dependency_symbols_free_list().
  *
  * Returns: 0 on success or < 0 otherwise.
+ *
+ * Since: 3
  */
 int kmod_module_get_dependency_symbols(const struct kmod_module *mod, struct kmod_list **list);
 
@@ -1001,6 +1099,8 @@ enum kmod_symbol_bind {
  *
  * Returns: the bind of this kmod module dependency_symbol on success,
  * or < 0 on failure. Valid bind types are #kmod_symbol_bind.
+ *
+ * Since: 3
  */
 int kmod_module_dependency_symbol_get_bind(const struct kmod_list *entry);
 
@@ -1011,6 +1111,8 @@ int kmod_module_dependency_symbol_get_bind(const struct kmod_list *entry);
  * Get the crc of a kmod module dependency_symbol.
  *
  * Returns: the crc of this kmod module dependency_symbol if available, otherwise default to 0.
+ *
+ * Since: 3
  */
 uint64_t kmod_module_dependency_symbol_get_crc(const struct kmod_list *entry);
 
@@ -1022,6 +1124,8 @@ uint64_t kmod_module_dependency_symbol_get_crc(const struct kmod_list *entry);
  *
  * Returns: the symbol of this kmod module dependency_symbols on success or NULL
  * on failure. The string is owned by the dependency_symbols, do not free it.
+ *
+ * Since: 3
  */
 const char *kmod_module_dependency_symbol_get_symbol(const struct kmod_list *entry);
 
@@ -1030,6 +1134,8 @@ const char *kmod_module_dependency_symbol_get_symbol(const struct kmod_list *ent
  * @list: kmod module dependency_symbols list
  *
  * Release the resources taken by @list
+ *
+ * Since: 3
  */
 void kmod_module_dependency_symbols_free_list(struct kmod_list *list);
 
@@ -1047,6 +1153,8 @@ void kmod_module_dependency_symbols_free_list(struct kmod_list *list);
  * After use, free the @list by calling kmod_module_section_free_list().
  *
  * Returns: a new list of kmod module sections on success or NULL on failure.
+ *
+ * Since: 1
  */
 struct kmod_list *kmod_module_get_sections(const struct kmod_module *mod);
 
@@ -1058,6 +1166,8 @@ struct kmod_list *kmod_module_get_sections(const struct kmod_module *mod);
  *
  * Returns: the address of this kmod module section on success or ULONG_MAX
  * on failure.
+ *
+ * Since: 1
  */
 unsigned long kmod_module_section_get_address(const struct kmod_list *entry);
 
@@ -1069,6 +1179,8 @@ unsigned long kmod_module_section_get_address(const struct kmod_list *entry);
  *
  * Returns: the name of this kmod module section on success or NULL on
  * failure. The string is owned by the section, do not free it.
+ *
+ * Since: 1
  */
 const char *kmod_module_section_get_name(const struct kmod_list *entry);
 
@@ -1077,6 +1189,8 @@ const char *kmod_module_section_get_name(const struct kmod_list *entry);
  * @list: kmod module section list
  *
  * Release the resources taken by @list
+ *
+ * Since: 1
  */
 void kmod_module_section_free_list(struct kmod_list *list);
 
@@ -1095,6 +1209,8 @@ void kmod_module_section_free_list(struct kmod_list *list);
  * After use, free the @list by calling kmod_module_symbols_free_list().
  *
  * Returns: 0 on success or < 0 otherwise.
+ *
+ * Since: 3
  */
 int kmod_module_get_symbols(const struct kmod_module *mod, struct kmod_list **list);
 
@@ -1105,6 +1221,8 @@ int kmod_module_get_symbols(const struct kmod_module *mod, struct kmod_list **li
  * Get the crc of a kmod module symbol.
  *
  * Returns: the crc of this kmod module symbol if available, otherwise default to 0.
+ *
+ * Since: 3
  */
 uint64_t kmod_module_symbol_get_crc(const struct kmod_list *entry);
 
@@ -1116,6 +1234,8 @@ uint64_t kmod_module_symbol_get_crc(const struct kmod_list *entry);
  *
  * Returns: the symbol of this kmod module symbols on success or NULL
  * on failure. The string is owned by the symbols, do not free it.
+ *
+ * Since: 3
  */
 const char *kmod_module_symbol_get_symbol(const struct kmod_list *entry);
 
@@ -1124,6 +1244,8 @@ const char *kmod_module_symbol_get_symbol(const struct kmod_list *entry);
  * @list: kmod module symbols list
  *
  * Release the resources taken by @list
+ *
+ * Since: 3
  */
 void kmod_module_symbols_free_list(struct kmod_list *list);
 
@@ -1142,6 +1264,8 @@ void kmod_module_symbols_free_list(struct kmod_list *list);
  * After use, free the @list by calling kmod_module_versions_free_list().
  *
  * Returns: 0 on success or < 0 otherwise.
+ *
+ * Since: 2
  */
 int kmod_module_get_versions(const struct kmod_module *mod, struct kmod_list **list);
 
@@ -1152,6 +1276,8 @@ int kmod_module_get_versions(const struct kmod_module *mod, struct kmod_list **l
  * Get the crc of a kmod module version.
  *
  * Returns: the crc of this kmod module version if available, otherwise default to 0.
+ *
+ * Since: 2
  */
 uint64_t kmod_module_version_get_crc(const struct kmod_list *entry);
 
@@ -1163,6 +1289,8 @@ uint64_t kmod_module_version_get_crc(const struct kmod_list *entry);
  *
  * Returns: the symbol of this kmod module versions on success or NULL
  * on failure. The string is owned by the versions, do not free it.
+ *
+ * Since: 2
  */
 const char *kmod_module_version_get_symbol(const struct kmod_list *entry);
 
@@ -1171,6 +1299,8 @@ const char *kmod_module_version_get_symbol(const struct kmod_list *entry);
  * @list: kmod module versions list
  *
  * Release the resources taken by @list
+ *
+ * Since: 2
  */
 void kmod_module_versions_free_list(struct kmod_list *list);
 
@@ -1193,6 +1323,8 @@ void kmod_module_versions_free_list(struct kmod_list *list);
  * After use, free the @list by calling kmod_module_info_free_list().
  *
  * Returns: number of entries in @list on success or < 0 otherwise.
+ *
+ * Since: 2
  */
 int kmod_module_get_info(const struct kmod_module *mod, struct kmod_list **list);
 
@@ -1204,6 +1336,8 @@ int kmod_module_get_info(const struct kmod_module *mod, struct kmod_list **list)
  *
  * Returns: the key of this kmod module info on success or NULL on
  * failure. The string is owned by the info, do not free it.
+ *
+ * Since: 2
  */
 const char *kmod_module_info_get_key(const struct kmod_list *entry);
 
@@ -1215,6 +1349,8 @@ const char *kmod_module_info_get_key(const struct kmod_list *entry);
  *
  * Returns: the value of this kmod module info on success or NULL on
  * failure. The string is owned by the info, do not free it.
+ *
+ * Since: 2
  */
 const char *kmod_module_info_get_value(const struct kmod_list *entry);
 
@@ -1223,6 +1359,8 @@ const char *kmod_module_info_get_value(const struct kmod_list *entry);
  * @list: kmod module info list
  *
  * Release the resources taken by @list
+ *
+ * Since: 2
  */
 void kmod_module_info_free_list(struct kmod_list *list);
 
@@ -1255,6 +1393,8 @@ void kmod_module_info_free_list(struct kmod_list *list);
  * completed.
  *
  * Returns: 0 on success or < 0 on error.
+ *
+ * Since: 1
  */
 int kmod_module_new_from_loaded(struct kmod_ctx *ctx,
 						struct kmod_list **list);
@@ -1287,6 +1427,8 @@ enum kmod_module_initstate {
  *
  * Returns: < 0 on error or module state if module is found in the kernel, valid
  * states are #kmod_module_initstate.
+ *
+ * Since: 1
  */
 int kmod_module_get_initstate(const struct kmod_module *mod);
 
@@ -1298,6 +1440,8 @@ int kmod_module_get_initstate(const struct kmod_module *mod);
  *
  * Returns: the string associated to the @state. This string is statically
  * allocated, do not free it.
+ *
+ * Since: 1
  */
 const char *kmod_module_initstate_str(enum kmod_module_initstate state);
 
@@ -1311,6 +1455,8 @@ const char *kmod_module_initstate_str(enum kmod_module_initstate state);
  * module to get its size.
  *
  * Returns: the size of this kmod module.
+ *
+ * Since: 1
  */
 long kmod_module_get_size(const struct kmod_module *mod);
 
@@ -1322,6 +1468,8 @@ long kmod_module_get_size(const struct kmod_module *mod);
  * /sys filesystem.
  *
  * Returns: the reference count on success or < 0 on failure.
+ *
+ * Since: 1
  */
 int kmod_module_get_refcnt(const struct kmod_module *mod);
 
@@ -1333,6 +1481,8 @@ int kmod_module_get_refcnt(const struct kmod_module *mod);
  * Kernel. After use, free the @list by calling kmod_module_unref_list().
  *
  * Returns: a new list of kmod modules on success or NULL on failure.
+ *
+ * Since: 1
  */
 struct kmod_list *kmod_module_get_holders(const struct kmod_module *mod);
 

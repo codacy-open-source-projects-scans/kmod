@@ -8,6 +8,7 @@
 #include <errno.h>
 #include <fnmatch.h>
 #include <inttypes.h>
+#include <limits.h>
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
@@ -166,12 +167,6 @@ static int add_value(struct index_value **values,
 	return 0;
 }
 
-static void read_error(void)
-{
-	fatal("Module index: unexpected error: %s\n"
-			"Try re-running depmod\n", errno ? strerror(errno) : "EOF");
-}
-
 static int read_char(FILE *in)
 {
 	int ch;
@@ -179,28 +174,31 @@ static int read_char(FILE *in)
 	errno = 0;
 	ch = getc_unlocked(in);
 	if (ch == EOF)
-		read_error();
+		errno = EINVAL;
 	return ch;
 }
 
-static uint32_t read_long(FILE *in)
+static int read_u32(FILE *in, uint32_t *l)
 {
-	uint32_t l;
+	uint32_t val;
 
 	errno = 0;
-	if (fread(&l, sizeof(uint32_t), 1, in) != sizeof(uint32_t))
-		read_error();
-	return ntohl(l);
+	if (fread(&val, sizeof(uint32_t), 1, in) != 1) {
+		errno = EINVAL;
+		return -1;
+	}
+	*l = ntohl(val);
+	return 1;
 }
 
-static unsigned buf_freadchars(struct strbuf *buf, FILE *in)
+static ssize_t buf_freadchars(struct strbuf *buf, FILE *in)
 {
-	unsigned i = 0;
+	ssize_t i = 0;
 	int ch;
 
 	while ((ch = read_char(in))) {
-		if (!strbuf_pushchar(buf, ch))
-			break;
+		if (ch == EOF || !strbuf_pushchar(buf, ch))
+			return -1;
 		i++;
 	}
 
@@ -221,8 +219,8 @@ struct index_node_f {
 
 static struct index_node_f *index_read(FILE *in, uint32_t offset)
 {
-	struct index_node_f *node;
-	char *prefix;
+	struct index_node_f *node = NULL;
+	char *prefix = NULL;
 	int i, child_count = 0;
 
 	if ((offset & INDEX_NODE_MASK) == 0)
@@ -234,43 +232,63 @@ static struct index_node_f *index_read(FILE *in, uint32_t offset)
 	if (offset & INDEX_NODE_PREFIX) {
 		struct strbuf buf;
 		strbuf_init(&buf);
-		buf_freadchars(&buf, in);
+		if (buf_freadchars(&buf, in) < 0) {
+			strbuf_release(&buf);
+			return NULL;
+		}
 		prefix = strbuf_steal(&buf);
 	} else
-		prefix = NOFAIL(strdup(""));
+		prefix = strdup("");
+
+	if (prefix == NULL)
+		goto err;
 
 	if (offset & INDEX_NODE_CHILDS) {
-		char first = read_char(in);
-		char last = read_char(in);
+		int first = read_char(in);
+		int last = read_char(in);
+
+		if (first == EOF || last == EOF || first > last)
+			goto err;
+
 		child_count = last - first + 1;
 
-		node = NOFAIL(malloc(sizeof(struct index_node_f) +
-				     sizeof(uint32_t) * child_count));
+		node = malloc(sizeof(struct index_node_f) +
+			      sizeof(uint32_t) * child_count);
+		if (node == NULL)
+			goto err;
 
-		node->first = first;
-		node->last = last;
+		node->first = (unsigned char) first;
+		node->last = (unsigned char) last;
 
 		for (i = 0; i < child_count; i++)
-			node->children[i] = read_long(in);
+			if (read_u32(in, &node->children[i]) < 0)
+				goto err;
 	} else {
-		node = NOFAIL(malloc(sizeof(struct index_node_f)));
+		node = malloc(sizeof(struct index_node_f));
+		if (node == NULL)
+			goto err;
+
 		node->first = INDEX_CHILDMAX;
 		node->last = 0;
 	}
 
 	node->values = NULL;
 	if (offset & INDEX_NODE_VALUES) {
-		int value_count;
+		uint32_t value_count;
 		struct strbuf buf;
 		const char *value;
 		unsigned int priority;
 
-		value_count = read_long(in);
+		if (read_u32(in, &value_count) < 0)
+			goto err;
 
 		strbuf_init(&buf);
 		while (value_count--) {
-			priority = read_long(in);
-			buf_freadchars(&buf, in);
+			if (read_u32(in, &priority) < 0 ||
+			    buf_freadchars(&buf, in) < 0) {
+				strbuf_release(&buf);
+				goto err;
+			}
 			value = strbuf_str(&buf);
 			add_value(&node->values, value, buf.used, priority);
 			strbuf_clear(&buf);
@@ -281,6 +299,10 @@ static struct index_node_f *index_read(FILE *in, uint32_t offset)
 	node->prefix = prefix;
 	node->file = in;
 	return node;
+err:
+	free(prefix);
+	free(node);
+	return NULL;
 }
 
 static void index_close(struct index_node_f *node)
@@ -306,24 +328,26 @@ struct index_file *index_file_open(const char *filename)
 		return NULL;
 	errno = EINVAL;
 
-	magic = read_long(file);
-	if (magic != INDEX_MAGIC) {
-		fclose(file);
-		return NULL;
-	}
+	if (read_u32(file, &magic) < 0 || magic != INDEX_MAGIC)
+		goto err;
 
-	version = read_long(file);
-	if (version >> 16 != INDEX_VERSION_MAJOR) {
-		fclose(file);
-		return NULL;
-	}
+	if (read_u32(file, &version) < 0 ||
+	    version >> 16 != INDEX_VERSION_MAJOR)
+		goto err;
 
-	new = NOFAIL(malloc(sizeof(struct index_file)));
+	new = malloc(sizeof(struct index_file));
+	if (new == NULL)
+		goto err;
+
 	new->file = file;
-	new->root_offset = read_long(new->file);
+	if (read_u32(new->file, &new->root_offset) < 0)
+		goto err;
 
 	errno = 0;
 	return new;
+err:
+	fclose(file);
+	return NULL;
 }
 
 void index_file_close(struct index_file *idx)
@@ -624,7 +648,7 @@ struct index_mm_node {
 	uint32_t children[];
 };
 
-static inline uint32_t read_long_mm(void **p)
+static inline uint32_t read_u32_mm(void **p)
 {
 	uint8_t *addr = *(uint8_t **)p;
 	uint32_t v;
@@ -675,9 +699,13 @@ static struct index_mm_node *index_mm_read_node(struct index_mm *idx,
 	if (offset & INDEX_NODE_CHILDS) {
 		first = read_char_mm(&p);
 		last = read_char_mm(&p);
+
+		if (first > last)
+			return NULL;
+
 		child_count = last - first + 1;
 		for (i = 0; i < child_count; i++)
-			children[i] = read_long_mm(&p);
+			children[i] = read_u32_mm(&p);
 	} else {
 		first = INDEX_CHILDMAX;
 		last = 0;
@@ -688,7 +716,7 @@ static struct index_mm_node *index_mm_read_node(struct index_mm *idx,
 			    (sizeof(uint32_t) * child_count)) % sizeof(void *);
 
 	if (offset & INDEX_NODE_VALUES)
-		value_count = read_long_mm(&p);
+		value_count = read_u32_mm(&p);
 	else
 		value_count = 0;
 
@@ -714,7 +742,7 @@ static struct index_mm_node *index_mm_read_node(struct index_mm *idx,
 
 	for (i = 0; i < value_count; i++) {
 		struct index_mm_value *v = node->values.values + i;
-		v->priority = read_long_mm(&p);
+		v->priority = read_u32_mm(&p);
 		v->value = read_chars_mm(&p, &v->len);
 	}
 
@@ -755,23 +783,28 @@ int index_mm_open(const struct kmod_ctx *ctx, const char *filename,
 		goto fail_open;
 	}
 
-	if (fstat(fd, &st) < 0 || (size_t) st.st_size < sizeof(hdr)) {
+	if (fstat(fd, &st) < 0 || st.st_size < (off_t) sizeof(hdr)) {
 		err = -EINVAL;
+		goto fail_nommap;
+	}
+
+	if ((uintmax_t)st.st_size > SIZE_MAX) {
+		err = -ENOMEM;
 		goto fail_nommap;
 	}
 
 	idx->mm = mmap(NULL, st.st_size, PROT_READ, MAP_PRIVATE, fd, 0);
 	if (idx->mm == MAP_FAILED) {
-		ERR(ctx, "mmap(NULL, %"PRIu64", PROT_READ, %d, MAP_PRIVATE, 0): %m\n",
-							st.st_size, fd);
+		ERR(ctx, "mmap(NULL, %"PRIu64", PROT_READ, MAP_PRIVATE, %d, 0): %m\n",
+							(uint64_t) st.st_size, fd);
 		err = -errno;
 		goto fail_nommap;
 	}
 
 	p = idx->mm;
-	hdr.magic = read_long_mm(&p);
-	hdr.version = read_long_mm(&p);
-	hdr.root_offset = read_long_mm(&p);
+	hdr.magic = read_u32_mm(&p);
+	hdr.version = read_u32_mm(&p);
+	hdr.root_offset = read_u32_mm(&p);
 
 	if (hdr.magic != INDEX_MAGIC) {
 		ERR(ctx, "magic check fail: %x instead of %x\n", hdr.magic,

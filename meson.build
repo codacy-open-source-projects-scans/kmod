@@ -33,9 +33,13 @@ cdata.set10('_GNU_SOURCE', true)
 # Function and structure checks
 ################################################################################
 
-foreach decl : ['__xstat', '__secure_getenv', 'secure_getenv']
-  if cc.has_function(decl, args : '-D_GNU_SOURCE')
-    cdata.set('HAVE_@0@'.format(decl.to_upper()), true)
+_funcs = [
+  'open64', 'stat64', 'fopen64', '__stat64_time64',
+  'secure_getenv',
+]
+foreach func : _funcs
+  if cc.has_function(func, args : '-D_GNU_SOURCE')
+    cdata.set('HAVE_@0@'.format(func.to_upper()), true)
   endif
 endforeach
 
@@ -82,12 +86,13 @@ endforeach
 # basename may be only available in libgen.h with the POSIX behavior,
 # not desired here
 _decls = [
-  ['basename', '#include <string.h>'],
+  ['basename', 'string.h'],
+  ['__xstat', 'sys/stat.h'],
 ]
 foreach tuple : _decls
   decl = tuple[0]
-  prefix = tuple[1]
-  have = cc.has_function(decl, prefix : prefix, args : '-D_GNU_SOURCE')
+  header = tuple[1]
+  have  = cc.has_header_symbol(header, decl, args : '-D_GNU_SOURCE')
   cdata.set10('HAVE_DECL_@0@'.format(decl.to_upper()), have)
 endforeach
 

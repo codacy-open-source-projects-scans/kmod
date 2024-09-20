@@ -39,17 +39,13 @@ AC_PROG_CC_C99
 # Function and structure checks
 #####################################################################
 
-AC_CHECK_FUNCS_ONCE(__xstat)
-AC_CHECK_FUNCS_ONCE([__secure_getenv secure_getenv])
+AC_CHECK_FUNCS_ONCE([open64 stat64 fopen64 __stat64_time64])
+AC_CHECK_FUNCS_ONCE([secure_getenv])
 
 CC_CHECK_FUNC_BUILTIN([__builtin_clz])
 CC_CHECK_FUNC_BUILTIN([__builtin_types_compatible_p])
 CC_CHECK_FUNC_BUILTIN([__builtin_uaddl_overflow], [ ], [ ])
 CC_CHECK_FUNC_BUILTIN([__builtin_uaddll_overflow], [ ], [ ])
-
-# Non glibc compilers (musl and newer versions of bionic) do not need
-# the 64 LFS API wrapping.
-AC_CHECK_DECLS_ONCE([[__GLIBC__]], [], [], [[#include <features.h>]])
 
 # dietlibc doesn't have st.st_mtim struct member
 AC_CHECK_MEMBERS([struct stat.st_mtim], [], [], [#include <sys/stat.h>])
@@ -57,6 +53,7 @@ AC_CHECK_MEMBERS([struct stat.st_mtim], [], [], [#include <sys/stat.h>])
 # basename may be only available in libgen.h with the POSIX behavior,
 # not desired here
 AC_CHECK_DECLS_ONCE([[basename]], [], [], [[#include <string.h>]])
+AC_CHECK_DECLS_ONCE([[__xstat]], [], [], [[#include <sys/stat.h]])
 
 AC_MSG_CHECKING([whether _Static_assert() is supported])
 AC_COMPILE_IFELSE(

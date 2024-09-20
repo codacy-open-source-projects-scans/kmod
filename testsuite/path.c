@@ -152,15 +152,7 @@ TS_EXPORT int open ## suffix (const char *path, int flags, ...)	\
 	return _fn(p, flags);					\
 }
 
-/*
- * wrapper template for __xstat family
- * This family got deprecated/dropped in glibc 2.32.9000, but we still need
- * to keep it for a while for programs that were built against previous versions
- */
 #define WRAP_VERSTAT(prefix, suffix)			    \
-TS_EXPORT int prefix ## stat ## suffix (int ver,	    \
-			      const char *path,		    \
-	                      struct stat ## suffix *st);   \
 TS_EXPORT int prefix ## stat ## suffix (int ver,	    \
 			      const char *path,		    \
 	                      struct stat ## suffix *st)    \
@@ -185,31 +177,27 @@ WRAP_1ARG(int, -1, chdir);
 
 WRAP_2ARGS(FILE*, NULL, fopen, const char*);
 WRAP_2ARGS(int, -1, mkdir, mode_t);
-WRAP_2ARGS(int, -1, access, int);
 WRAP_2ARGS(int, -1, stat, struct stat*);
-WRAP_2ARGS(int, -1, lstat, struct stat*);
 
 WRAP_OPEN();
 
-#if HAVE_DECL___GLIBC__
+#ifdef HAVE_FOPEN64
 WRAP_2ARGS(FILE*, NULL, fopen64, const char*);
+#endif
+#ifdef HAVE_STAT64
 WRAP_2ARGS(int, -1, stat64, struct stat64*);
-WRAP_2ARGS(int, -1, lstat64, struct stat64*);
+#endif
 
-struct __stat64_t64;
-extern int __stat64_time64 (const char *file, struct __stat64_t64 *buf);
-extern int __lstat64_time64 (const char *file, struct __stat64_t64 *buf);
-WRAP_2ARGS(int, -1, __stat64_time64, struct __stat64_t64*);
-WRAP_2ARGS(int, -1, __lstat64_time64, struct __stat64_t64*);
+#ifdef HAVE___STAT64_TIME64
+extern int __stat64_time64 (const char *file, void *buf);
+WRAP_2ARGS(int, -1, __stat64_time64, void *);
+#endif
 
+#ifdef HAVE_OPEN64
 WRAP_OPEN(64);
 #endif
 
-#ifdef HAVE___XSTAT
+#if HAVE_DECL___XSTAT
 WRAP_VERSTAT(__x,);
-WRAP_VERSTAT(__lx,);
-#if HAVE_DECL___GLIBC__
 WRAP_VERSTAT(__x,64);
-WRAP_VERSTAT(__lx,64);
-#endif
 #endif
