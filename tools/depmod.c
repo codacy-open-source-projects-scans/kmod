@@ -265,10 +265,9 @@ static int index_insert(struct index_node *node, const char *key, const char *va
 				struct index_node *n;
 
 				/* New child is copy of node with prefix[j+1..N] */
-				n = calloc(1, sizeof(struct index_node));
+				n = memdup(node, sizeof(struct index_node));
 				if (n == NULL)
 					fatal_oom();
-				memcpy(n, node, sizeof(struct index_node));
 				n->prefix = strdup(&prefix[j + 1]);
 				if (n->prefix == NULL)
 					fatal_oom();
@@ -1067,6 +1066,11 @@ static int depmod_module_add(struct depmod *depmod, struct kmod_module *kmod)
 		size_t uncrelpathlen = lastslash - mod->relpath + modnamesz +
 				       strlen(KMOD_EXTENSION_UNCOMPRESSED);
 		mod->uncrelpath = memdup(mod->relpath, uncrelpathlen + 1);
+		if (mod->uncrelpath == NULL) {
+			err = -ENOMEM;
+			hash_del(depmod->modules_by_name, mod->modname);
+			goto fail;
+		}
 		mod->uncrelpath[uncrelpathlen] = '\0';
 		err = hash_add_unique(depmod->modules_by_uncrelpath, mod->uncrelpath, mod);
 		if (err < 0) {
@@ -1424,6 +1428,8 @@ static int depmod_modules_build_array(struct depmod *depmod)
 		if (err < 0)
 			return err;
 	}
+	if (depmod->modules.count >= UINT16_MAX)
+		return -ERANGE;
 
 	return 0;
 }
@@ -1459,39 +1465,30 @@ static void depmod_modules_sort(struct depmod *depmod)
 	char line[PATH_MAX];
 	const char *order_file = "modules.order";
 	FILE *fp;
-	unsigned idx = 0, total = 0;
+	size_t idx = 0;
+	// all sorted modules shall have precedence
+	int i = -(int)depmod->modules.count;
 
 	fp = dfdopen(depmod->cfg->dirname, order_file, O_RDONLY, "r");
 	if (fp == NULL)
 		return;
 
 	while (fgets(line, sizeof(line), fp) != NULL) {
+		struct mod *mod;
 		size_t len = strlen(line);
 		idx++;
 		if (len == 0)
 			continue;
 		if (line[len - 1] != '\n') {
-			ERR("%s/%s:%u corrupted line misses '\\n'\n",
+			ERR("%s/%s:%zu corrupted line misses '\\n'\n",
 			    depmod->cfg->dirname, order_file, idx);
 			goto corrupted;
 		}
-	}
-	total = idx + 1;
-	idx = 0;
-	fseek(fp, 0, SEEK_SET);
-	while (fgets(line, sizeof(line), fp) != NULL) {
-		size_t len = strlen(line);
-		struct mod *mod;
-
-		idx++;
-		if (len == 0)
-			continue;
 		line[len - 1] = '\0';
-
 		mod = hash_find(depmod->modules_by_uncrelpath, line);
-		if (mod == NULL)
+		if (mod == NULL || mod->sort_idx < 0)
 			continue;
-		mod->sort_idx = idx - total;
+		mod->sort_idx = i++;
 	}
 
 	array_sort(&depmod->modules, mod_cmp);
@@ -2310,10 +2307,10 @@ static int output_symbols(struct depmod *depmod, FILE *out)
 static int output_symbols_bin(struct depmod *depmod, FILE *out)
 {
 	struct index_node *idx;
-	char alias[1024];
+	char aliasbuf[1024] = "symbol:";
 	_cleanup_(scratchbuf_release) struct scratchbuf salias =
-		SCRATCHBUF_INITIALIZER(alias);
-	size_t baselen = sizeof("symbol:") - 1;
+		SCRATCHBUF_INITIALIZER(aliasbuf);
+	const size_t baselen = sizeof("symbol:") - 1;
 	struct hash_iter iter;
 	const void *v;
 	int ret = 0;
@@ -2325,14 +2322,13 @@ static int output_symbols_bin(struct depmod *depmod, FILE *out)
 	if (idx == NULL)
 		return -ENOMEM;
 
-	memcpy(alias, "symbol:", baselen);
-
 	hash_iter_init(depmod->symbols, &iter);
 
 	while (hash_iter_next(&iter, NULL, &v)) {
 		int duplicate;
 		const struct symbol *sym = v;
 		size_t len;
+		char *s;
 
 		if (sym->owner == NULL)
 			continue;
@@ -2343,12 +2339,12 @@ static int output_symbols_bin(struct depmod *depmod, FILE *out)
 			ret = -ENOMEM;
 			goto err_scratchbuf;
 		}
-		memcpy(scratchbuf_str(&salias) + baselen, sym->name, len + 1);
-		duplicate =
-			index_insert(idx, alias, sym->owner->modname, sym->owner->idx);
+		s = scratchbuf_str(&salias);
+		memcpy(s + baselen, sym->name, len + 1);
+		duplicate = index_insert(idx, s, sym->owner->modname, sym->owner->idx);
 
 		if (duplicate && depmod->cfg->warn_dups)
-			WRN("duplicate module syms:\n%s %s\n", alias, sym->owner->modname);
+			WRN("duplicate module syms:\n%s %s\n", s, sym->owner->modname);
 	}
 
 	index_write(idx, out);
@@ -2661,7 +2657,7 @@ static int depmod_output(struct depmod *depmod, FILE *out)
 
 static void depmod_add_fake_syms(struct depmod *depmod)
 {
-	/* __this_module is magic inserted by kernel loader. */
+	/* __this_module is magically inserted by kernel loader. */
 	depmod_symbol_add(depmod, "__this_module", true, 0, NULL);
 	/* On S390, this is faked up too */
 	depmod_symbol_add(depmod, "_GLOBAL_OFFSET_TABLE_", true, 0, NULL);

@@ -6,6 +6,7 @@
 #include <assert.h>
 #include <elf.h>
 #include <errno.h>
+#include <limits.h>
 #include <stdlib.h>
 #include <string.h>
 
@@ -344,7 +345,7 @@ struct kmod_elf *kmod_elf_new(const void *memory, off_t size)
 		uint64_t slen;
 		const char *s = elf_get_strings_section(elf, &slen);
 		if (slen == 0 || s[slen - 1] != '\0') {
-			ELFDBG(elf, "strings section does not ends with \\0\n");
+			ELFDBG(elf, "strings section does not end with \\0\n");
 			goto invalid;
 		}
 	}
@@ -428,6 +429,7 @@ int kmod_elf_get_section(const struct kmod_elf *elf, const char *section,
 int kmod_elf_get_strings(const struct kmod_elf *elf, const char *section, char ***array)
 {
 	size_t i, j, count;
+	size_t vecsz;
 	uint64_t size;
 	const void *buf;
 	const char *strings;
@@ -468,7 +470,13 @@ int kmod_elf_get_strings(const struct kmod_elf *elf, const char *section, char *
 	if (strings[i - 1] != '\0')
 		count++;
 
-	*array = a = malloc(size + 1 + sizeof(char *) * (count + 1));
+	/* make sure that vector and strings fit into memory constraints */
+	vecsz = sizeof(char *) * (count + 1);
+	if (SIZE_MAX / sizeof(char *) - 1 < count || SIZE_MAX - size <= vecsz) {
+		return -ENOMEM;
+	}
+
+	*array = a = malloc(vecsz + size + 1);
 	if (*array == NULL)
 		return -errno;
 
@@ -756,12 +764,13 @@ static uint64_t kmod_elf_resolve_crc(const struct kmod_elf *elf, uint64_t crc,
 
 	err = elf_get_section_info(elf, shndx, &off, &size, &nameoff);
 	if (err < 0) {
-		ELFDBG("Could not find section index %" PRIu16 " for crc", shndx);
+		ELFDBG(elf, "Could not find section index %" PRIu16 " for crc", shndx);
 		return (uint64_t)-1;
 	}
 
 	if (crc > (size - sizeof(uint32_t))) {
-		ELFDBG("CRC offset %" PRIu64 " is too big, section %" PRIu16
+		ELFDBG(elf,
+		       "CRC offset %" PRIu64 " is too big, section %" PRIu16
 		       " size is %" PRIu64 "\n",
 		       crc, shndx, size);
 		return (uint64_t)-1;
