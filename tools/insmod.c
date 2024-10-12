@@ -30,7 +30,7 @@ static const struct option cmdopts[] = {
 static void help(void)
 {
 	printf("Usage:\n"
-	       "\t%s [options] filename [args]\n"
+	       "\t%s [options] filename [module options]\n"
 	       "Options:\n"
 	       "\t-f, --force       DANGEROUS: forces a module load, may cause\n"
 	       "\t                  data corruption and crash your machine\n"
@@ -65,7 +65,7 @@ static int do_insmod(int argc, char *argv[])
 	char *opts = NULL;
 	size_t optslen = 0;
 	int verbose = LOG_ERR;
-	int use_syslog;
+	int use_syslog = 0;
 	int i, err = 0, r = 0;
 	const char *null_config = NULL;
 	unsigned int flags = 0;
