@@ -44,8 +44,12 @@ AC_CHECK_FUNCS_ONCE([secure_getenv])
 
 CC_CHECK_FUNC_BUILTIN([__builtin_clz])
 CC_CHECK_FUNC_BUILTIN([__builtin_types_compatible_p])
+CC_CHECK_FUNC_BUILTIN([__builtin_uadd_overflow], [ ], [ ])
 CC_CHECK_FUNC_BUILTIN([__builtin_uaddl_overflow], [ ], [ ])
 CC_CHECK_FUNC_BUILTIN([__builtin_uaddll_overflow], [ ], [ ])
+CC_CHECK_FUNC_BUILTIN([__builtin_umul_overflow], [ ], [ ])
+CC_CHECK_FUNC_BUILTIN([__builtin_umull_overflow], [ ], [ ])
+CC_CHECK_FUNC_BUILTIN([__builtin_umulll_overflow], [ ], [ ])
 
 # dietlibc doesn't have st.st_mtim struct member
 AC_CHECK_MEMBERS([struct stat.st_mtim], [], [], [#include <sys/stat.h>])
@@ -203,6 +207,8 @@ AC_ARG_ENABLE([logging],
 	[], enable_logging=yes)
 AS_IF([test "x$enable_logging" = "xyes"], [
 	AC_DEFINE(ENABLE_LOGGING, [1], [System logging.])
+], [
+	AC_DEFINE(ENABLE_LOGGING, [0], [System logging.])
 ])
 
 AC_ARG_ENABLE([debug],
@@ -210,7 +216,10 @@ AC_ARG_ENABLE([debug],
 	[], [enable_debug=no])
 AS_IF([test "x$enable_debug" = "xyes"], [
 	AC_DEFINE(ENABLE_DEBUG, [1], [Debug messages.])
+], [
+	AC_DEFINE(ENABLE_DEBUG, [0], [Debug messages.])
 ])
+AC_DEFINE(ENABLE_ELFDBG, [0], [Debug elf parsing messages.])
 
 AC_ARG_ENABLE([coverage],
 	AS_HELP_STRING([--enable-coverage], [enable test coverage @<:@default=disabled@:>@]),

@@ -20,6 +20,7 @@ cdata.set_quoted('VERSION', meson.project_version())
 
 cdata.set10('ENABLE_LOGGING', get_option('logging'))
 cdata.set10('ENABLE_DEBUG', get_option('debug-messages'))
+cdata.set10('ENABLE_ELFDBG', false)
 
 pkg = import('pkgconfig')
 cc = meson.get_compiler('c')
@@ -49,8 +50,12 @@ endforeach
 _builtins = [
   ['__builtin_clz', '0', true],
   ['__builtin_types_compatible_p', 'int, int', true],
+  ['__builtin_uadd_overflow', '0U, 0U, (void*)0', false],
   ['__builtin_uaddl_overflow', '0UL, 0UL, (void*)0', false],
   ['__builtin_uaddll_overflow', '0ULL, 0ULL, (void*)0', false],
+  ['__builtin_umul_overflow', '0U, 0U, (void*)0', false],
+  ['__builtin_umull_overflow', '0UL, 0UL, (void*)0', false],
+  ['__builtin_umulll_overflow', '0ULL, 0ULL, (void*)0', false],
 ]
 foreach tuple : _builtins
   builtin = tuple[0]
@@ -64,12 +69,6 @@ foreach tuple : _builtins
 
   cdata.set10('HAVE_@0@'.format(builtin.to_upper()), have)
 endforeach
-
-# Check for __GLIBC__ as short-cut for the LFS64 wrappers
-glibc = cc.has_header_symbol('features.h', '__GLIBC__')
-# XXX: once meson only, rename the define to something more sensible ...
-# NEED_64_WRAPPERS perhaps?
-cdata.set10('HAVE_DECL___GLIBC__', glibc)
 
 # dietlibc doesn't have st.st_mtim struct member
 # XXX: we use both st_mtim and st_mtime ... unify and test
@@ -160,6 +159,17 @@ add_project_link_arguments(
   language : 'c'
 )
 
+# Clang as of v18, relies on statically linking the sanitizers. This causes two
+# distinct issues:
+#  - the shared library is underlinked, so the build fails
+#  - the modules (that we dlopen/ld_preload) are underlinked so the tests fail
+#
+# Force shared libasan (GCC defaults to shared and this toggle doesn't exist),
+# which combined with the LD_PRELOAD in our wrapper makes everything happy.
+if get_option('b_sanitize') != 'none' and cc.get_id() == 'clang'
+  add_project_arguments('-shared-libasan', language : 'c')
+  add_project_link_arguments('-shared-libasan', language : 'c')
+endif
 ################################################################################
 # Options
 ################################################################################
@@ -454,6 +464,8 @@ endforeach
 # ------------------------------------------------------------------------------
 
 if get_option('build-tests')
+  bash = find_program('bash')
+  sanitizer_env = find_program('scripts/sanitizer-env.sh')
   setup_modules = find_program('scripts/setup-modules.sh')
   setup_rootfs = find_program('scripts/setup-rootfs.sh')
   top_include = include_directories('.')

@@ -960,8 +960,10 @@ static int mod_add_dependency(struct mod *mod, struct symbol *sym)
 	return 0;
 }
 
-static void symbol_free(struct symbol *sym)
+static void symbol_free(void *data)
 {
+	struct symbol *sym = data;
+
 	DBG("free %p sym=%s, owner=%p %s\n", sym, sym->name, sym->owner,
 	    sym->owner != NULL ? sym->owner->path : "");
 	free(sym);
@@ -988,7 +990,7 @@ static int depmod_init(struct depmod *depmod, struct cfg *cfg, struct kmod_ctx *
 		goto modules_by_name_failed;
 	}
 
-	depmod->symbols = hash_new(2048, (void (*)(void *))symbol_free);
+	depmod->symbols = hash_new(2048, symbol_free);
 	if (depmod->symbols == NULL) {
 		err = -errno;
 		goto symbols_failed;
@@ -1941,6 +1943,9 @@ static int depmod_calculate_dependencies(struct depmod *depmod)
 		src->dep_sort_idx = n_sorted;
 		sorted[n_sorted] = src_idx;
 		n_sorted++;
+
+		if (src->deps.count == 0)
+			continue;
 
 		itr_dst = (const struct mod **)src->deps.array;
 		itr_dst_end = itr_dst + src->deps.count;

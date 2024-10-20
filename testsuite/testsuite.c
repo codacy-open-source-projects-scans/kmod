@@ -161,8 +161,6 @@ static void test_export_environ(const struct test *t)
 	size_t i;
 	const struct keyval *env;
 
-	unsetenv("LD_PRELOAD");
-
 	for (i = 0; i < _TC_LAST; i++) {
 		const char *ldpreload;
 		size_t ldpreloadlen;
@@ -189,8 +187,27 @@ static void test_export_environ(const struct test *t)
 		preload[preloadlen] = '\0';
 	}
 
-	if (preload != NULL)
+	if (preload != NULL) {
+		const char *existing_preload = getenv("LD_PRELOAD");
+		if (existing_preload) {
+			char *tmp;
+			size_t len = strlen(existing_preload);
+
+			tmp = malloc(preloadlen + 2 + len);
+			if (tmp == NULL) {
+				ERR("oom: test_export_environ()\n");
+				return;
+			}
+			memcpy(tmp, existing_preload, len);
+			tmp[len++] = ' ';
+			memcpy(tmp + len, preload, preloadlen);
+			preloadlen += len;
+			tmp[preloadlen] = '\0';
+			free(preload);
+			preload = tmp;
+		}
 		setenv("LD_PRELOAD", preload, 1);
+	}
 
 	free(preload);
 
@@ -241,7 +258,7 @@ static inline int test_run_child(const struct test *t, int fdout[2], int fderr[2
 		}
 
 		if (stat_mstamp(&rootfsst) > stat_mstamp(&stampst)) {
-			ERR("rootfs %s is dirty, please run 'make rootfs' before running this test\n",
+			ERR("rootfs %s is dirty, please run 'meson compile testsuite/stamp-rootfs' before running this test\n",
 			    rootfs);
 			exit(EXIT_FAILURE);
 		}

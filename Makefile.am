@@ -23,6 +23,7 @@ EXTRA_DIST += \
 	meson_options.txt \
 	testsuite/meson.build \
 	scripts/build-scdoc.sh \
+	scripts/sanitizer-env.sh \
 	scripts/test-gtkdoc.sh \
 	scripts/kmod-symlink.sh
 

@@ -10,9 +10,11 @@ build_module_playground = custom_target(
     meson.project_build_root(),
     'testsuite/module-playground', # do not prepend source/build root
   ],
+  # The command ensures we don't do extra work, so the missing output token file
+  # and the build_always_stale true are intentional.
   output : 'bb-rootfs',
   console : true,
-  build_always_stale : true, # TODO: only when the playground has changed
+  build_always_stale : true,
   build_by_default : false,
 )
 
@@ -94,17 +96,28 @@ _testsuite = [
   'test-weakdep',
 ]
 
+if get_option('b_sanitize') != 'none'
+  source_env = 'source @0@;'.format(sanitizer_env.full_path())
+else
+  source_env = ''
+endif
+
 foreach input : _testsuite
+  exec = executable(
+    input,
+    files('@0@.c'.format(input)),
+    include_directories : top_include,
+    c_args : testsuite_c_args,
+    link_with : [libshared, libkmod_internal, libtestsuite],
+    build_by_default : false,
+  )
   test(
     input,
-    executable(
-      input,
-      files('@0@.c'.format(input)),
-      include_directories : top_include,
-      c_args : testsuite_c_args,
-      link_with : [libshared, libkmod_internal, libtestsuite],
-      build_by_default : false,
-    ),
-    depends : [internal_kmod_symlinks, create_rootfs, test_override_mods],
+    bash,
+    args : [
+      '-c',
+      '@0@@1@'.format(source_env, exec.full_path()),
+    ],
+    depends : [exec, internal_kmod_symlinks, create_rootfs, test_override_mods],
   )
 endforeach

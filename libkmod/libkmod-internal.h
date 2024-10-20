@@ -10,32 +10,18 @@
 
 #include "libkmod.h"
 
-static _always_inline_ _printf_format_(2, 3) void kmod_log_null(const struct kmod_ctx *ctx,
-								const char *format, ...)
-{
-}
-
-#define kmod_log_cond(ctx, prio, arg...)                                          \
-	do {                                                                      \
-		if (kmod_get_log_priority(ctx) >= prio)                           \
-			kmod_log(ctx, prio, __FILE__, __LINE__, __func__, ##arg); \
+#define kmod_log_cond(ctx, prio, arg...)                                           \
+	do {                                                                       \
+		if (ENABLE_LOGGING == 1 &&                                         \
+		    (ENABLE_DEBUG == 1 || (!ENABLE_DEBUG && prio != LOG_DEBUG)) && \
+		    kmod_get_log_priority(ctx) >= prio)                            \
+			kmod_log(ctx, prio, __FILE__, __LINE__, __func__, ##arg);  \
 	} while (0)
 
-#ifdef ENABLE_LOGGING
-#ifdef ENABLE_DEBUG
 #define DBG(ctx, arg...) kmod_log_cond(ctx, LOG_DEBUG, ##arg)
-#else
-#define DBG(ctx, arg...) kmod_log_null(ctx, ##arg)
-#endif
 #define NOTICE(ctx, arg...) kmod_log_cond(ctx, LOG_NOTICE, ##arg)
 #define INFO(ctx, arg...) kmod_log_cond(ctx, LOG_INFO, ##arg)
 #define ERR(ctx, arg...) kmod_log_cond(ctx, LOG_ERR, ##arg)
-#else
-#define DBG(ctx, arg...) kmod_log_null(ctx, ##arg)
-#define NOTICE(ctx, arg...) kmod_log_null(ctx, ##arg)
-#define INFO(ctx, arg...) kmod_log_null(ctx, ##arg)
-#define ERR(ctx, arg...) kmod_log_null(ctx, ##arg)
-#endif
 
 #define KMOD_EXPORT __attribute__((visibility("default")))
 
@@ -169,8 +155,7 @@ _must_check_ _nonnull_all_ int kmod_elf_get_strings(const struct kmod_elf *elf, 
 _must_check_ _nonnull_all_ int kmod_elf_get_modversions(const struct kmod_elf *elf, struct kmod_modversion **array);
 _must_check_ _nonnull_all_ int kmod_elf_get_symbols(const struct kmod_elf *elf, struct kmod_modversion **array);
 _must_check_ _nonnull_all_ int kmod_elf_get_dependency_symbols(const struct kmod_elf *elf, struct kmod_modversion **array);
-_must_check_ _nonnull_all_ int kmod_elf_strip_section(struct kmod_elf *elf, const char *section);
-_must_check_ _nonnull_all_ int kmod_elf_strip_vermagic(struct kmod_elf *elf);
+_must_check_ _nonnull_all_ const void *kmod_elf_strip(const struct kmod_elf *elf, unsigned int flags);
 
 /*
  * Debug mock lib need to find section ".gnu.linkonce.this_module" in order to

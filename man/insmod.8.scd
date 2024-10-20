@@ -6,12 +6,12 @@ insmod - Simple program to insert a module into the Linux Kernel
 
 # SYNOPSIS
 
-*insmod* [_OPTIONS_] [_filename_] [_module options_...]
+*insmod* [_OPTIONS_] [_filename_] [_module options_]
 
 # DESCRIPTION
 
 *insmod* is a trivial program to insert a module into the kernel. Most users
-will want to use* modprobe*(8) instead, which is more clever and can handle
+will want to use *modprobe*(8) instead, which is more clever and can handle
 module dependencies.
 
 Only the most general of error messages are reported: as the work of trying to
@@ -25,6 +25,7 @@ information about errors.
 	the module version and vermagic fields when loading. With this option,
 	you can load modules build locally or by third parties, although this
 	can lead to memory corruption, system crashes and data loss.
+
 *-s*, *--syslog*
 	Send errors to syslog instead of standard error.
 
@@ -50,7 +51,7 @@ This manual page originally Copyright 2002, Rusty Russell, IBM Corporation.
 
 Please direct any bug reports to kmod's issue tracker at
 https://github.com/kmod-project/kmod/issues/ alongside with version used, steps
-to reproduce the problem and the expected outcome."
+to reproduce the problem and the expected outcome.
 
 # AUTHORS
 

@@ -44,7 +44,7 @@
  * where the keys in the index are treated as patterns.
  * This feature is required for module aliases.
  */
-#define INDEX_CHILDMAX 128
+#define INDEX_CHILDMAX 128u
 
 /* Disk format:
  *
@@ -56,8 +56,8 @@
  *
  *       char[] prefix; // nul terminated
  *
- *       char first;
- *       char last;
+ *       unsigned char first;
+ *       unsigned char last;
  *       uint32_t children[last - first + 1];
  *
  *       uint32_t value_count;
@@ -494,15 +494,10 @@ static void index_searchwild__allvalues(struct index_node_f *node,
 static void index_searchwild__all(struct index_node_f *node, int j, struct strbuf *buf,
 				  const char *subkey, struct index_value **out)
 {
-	size_t pushed = 0;
+	size_t pushed;
 	int ch;
 
-	while (node->prefix[j]) {
-		ch = node->prefix[j];
-
-		pushed += strbuf_pushchar(buf, ch);
-		j++;
-	}
+	pushed = strbuf_pushchars(buf, &node->prefix[j]);
 
 	for (ch = node->first; ch <= node->last; ch++) {
 		struct index_node_f *child = index_readchild(node, ch);
@@ -516,7 +511,7 @@ static void index_searchwild__all(struct index_node_f *node, int j, struct strbu
 		}
 	}
 
-	if (node->values) {
+	if (pushed && node->values) {
 		const char *s = strbuf_str(buf);
 
 		if (s != NULL && fnmatch(s, subkey, 0) == 0)
@@ -682,7 +677,7 @@ static struct index_mm_node *index_mm_read_node(struct index_mm *idx, uint32_t o
 	const char *prefix;
 	int i, child_count, value_count, children_padding;
 	uint32_t children[INDEX_CHILDMAX];
-	char first, last;
+	unsigned char first, last;
 
 	if ((offset & INDEX_NODE_MASK) == 0)
 		return NULL;
@@ -699,7 +694,7 @@ static struct index_mm_node *index_mm_read_node(struct index_mm *idx, uint32_t o
 		first = read_char_mm(&p);
 		last = read_char_mm(&p);
 
-		if (first > last || first < 0 || last < 0)
+		if (first > last || first >= INDEX_CHILDMAX || last >= INDEX_CHILDMAX)
 			return NULL;
 
 		child_count = last - first + 1;
@@ -985,15 +980,10 @@ static void index_mm_searchwild_allvalues(struct index_mm_node *node,
 static void index_mm_searchwild_all(struct index_mm_node *node, int j, struct strbuf *buf,
 				    const char *subkey, struct index_value **out)
 {
-	size_t pushed = 0;
+	size_t pushed;
 	int ch;
 
-	while (node->prefix[j]) {
-		ch = node->prefix[j];
-
-		pushed += strbuf_pushchar(buf, ch);
-		j++;
-	}
+	pushed = strbuf_pushchars(buf, &node->prefix[j]);
 
 	for (ch = node->first; ch <= node->last; ch++) {
 		struct index_mm_node *child = index_mm_readchild(node, ch);
@@ -1007,7 +997,7 @@ static void index_mm_searchwild_all(struct index_mm_node *node, int j, struct st
 		}
 	}
 
-	if (node->values.len > 0) {
+	if (pushed && node->values.len > 0) {
 		const char *s = strbuf_str(buf);
 
 		if (s != NULL && fnmatch(s, subkey, 0) == 0)
