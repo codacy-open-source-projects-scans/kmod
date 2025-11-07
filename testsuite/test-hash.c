@@ -17,12 +17,12 @@
 
 static int freecount;
 
-static void countfreecalls(void *v)
+static void countfreecalls(_maybe_unused_ void *v)
 {
 	freecount++;
 }
 
-static int test_hash_new(const struct test *t)
+static int test_hash_new(void)
 {
 	struct hash *h = hash_new(8, NULL);
 	assert_return(h != NULL, EXIT_FAILURE);
@@ -31,7 +31,7 @@ static int test_hash_new(const struct test *t)
 }
 DEFINE_TEST(test_hash_new, .description = "test hash_new");
 
-static int test_hash_get_count(const struct test *t)
+static int test_hash_get_count(void)
 {
 	struct hash *h = hash_new(8, NULL);
 	const char *k1 = "k1", *k2 = "k2", *k3 = "k3";
@@ -48,7 +48,7 @@ static int test_hash_get_count(const struct test *t)
 }
 DEFINE_TEST(test_hash_get_count, .description = "test hash_add / hash_get_count");
 
-static int test_hash_replace(const struct test *t)
+static int test_hash_replace(void)
 {
 	struct hash *h = hash_new(8, countfreecalls);
 	const char *k1 = "k1", *k2 = "k2", *k3 = "k3";
@@ -76,7 +76,7 @@ static int test_hash_replace(const struct test *t)
 }
 DEFINE_TEST(test_hash_replace, .description = "test hash_add replacing existing value");
 
-static int test_hash_replace_failing(const struct test *t)
+static int test_hash_replace_failing(void)
 {
 	struct hash *h = hash_new(8, countfreecalls);
 	const char *k1 = "k1", *k2 = "k2", *k3 = "k3";
@@ -106,7 +106,7 @@ static int test_hash_replace_failing(const struct test *t)
 DEFINE_TEST(test_hash_replace_failing,
 	    .description = "test hash_add_unique failing to replace existing value");
 
-static int test_hash_iter(const struct test *t)
+static int test_hash_iter(void)
 {
 	struct hash *h = hash_new(8, NULL);
 	struct hash *h2 = hash_new(8, NULL);
@@ -137,7 +137,7 @@ static int test_hash_iter(const struct test *t)
 }
 DEFINE_TEST(test_hash_iter, .description = "test hash_iter");
 
-static int test_hash_iter_after_del(const struct test *t)
+static int test_hash_iter_after_del(void)
 {
 	struct hash *h = hash_new(8, NULL);
 	struct hash *h2 = hash_new(8, NULL);
@@ -171,7 +171,38 @@ static int test_hash_iter_after_del(const struct test *t)
 DEFINE_TEST(test_hash_iter_after_del,
 	    .description = "test hash_iter, after deleting element");
 
-static int test_hash_free(const struct test *t)
+static int test_hash_del(void)
+{
+	struct hash *h = hash_new(32, NULL);
+	const char *k1 = "k1";
+	const char *v1 = "v1";
+
+	hash_add(h, k1, v1);
+	hash_del(h, k1);
+
+	hash_free(h);
+
+	return 0;
+}
+DEFINE_TEST(test_hash_del, .description = "test add / delete a single element");
+
+static int test_hash_del_nonexistent(void)
+{
+	struct hash *h = hash_new(32, NULL);
+	const char *k1 = "k1";
+	int rc;
+
+	rc = hash_del(h, k1);
+	assert_return(rc == -ENOENT, EXIT_FAILURE);
+
+	hash_free(h);
+
+	return 0;
+}
+DEFINE_TEST(test_hash_del_nonexistent,
+	    .description = "test deleting an element that doesn't exist");
+
+static int test_hash_free(void)
 {
 	struct hash *h = hash_new(8, countfreecalls);
 	const char *k1 = "k1", *k2 = "k2", *k3 = "k3";
@@ -196,10 +227,10 @@ static int test_hash_free(const struct test *t)
 DEFINE_TEST(test_hash_free,
 	    .description = "test hash_free calling free function for all values");
 
-static int test_hash_add_unique(const struct test *t)
+static int test_hash_add_unique(void)
 {
-	const char *k[] = { "k1", "k2", "k3", "k4", "k5" };
-	const char *v[] = { "v1", "v2", "v3", "v4", "v5" };
+	static const char *const k[] = { "k1", "k2", "k3", "k4", "k5" };
+	static const char *const v[] = { "v1", "v2", "v3", "v4", "v5" };
 	unsigned int i, j, N;
 
 	N = ARRAY_SIZE(k);
@@ -219,9 +250,9 @@ static int test_hash_add_unique(const struct test *t)
 	return 0;
 }
 DEFINE_TEST(test_hash_add_unique,
-	    .description = "test hash_add_unique with different key orders")
+	    .description = "test hash_add_unique with different key orders");
 
-static int test_hash_massive_add_del(const struct test *t)
+static int test_hash_massive_add_del(void)
 {
 	char buf[1024 * 8];
 	char *k;
@@ -251,6 +282,6 @@ static int test_hash_massive_add_del(const struct test *t)
 	return 0;
 }
 DEFINE_TEST(test_hash_massive_add_del,
-	    .description = "test multiple adds followed by multiple dels")
+	    .description = "test multiple adds followed by multiple dels");
 
 TESTSUITE_MAIN();

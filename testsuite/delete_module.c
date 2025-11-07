@@ -19,6 +19,7 @@
 #include <unistd.h>
 
 #include <shared/util.h>
+#include <shared/strbuf.h>
 
 #include "testsuite.h"
 
@@ -59,14 +60,19 @@ static void parse_retcodes(struct mod **_modules, const char *s)
 		if (p == NULL)
 			break;
 
+		errno = 0;
 		l = strtol(p, &end, 0);
-		if (end == p || *end != ':')
+		if (end == p || *end != ':' || errno == ERANGE || l < INT_MIN ||
+		    l > INT_MAX)
 			break;
 
 		ret = (int)l;
 		p = end + 1;
 
+		errno = 0;
 		l = strtol(p, &end, 0);
+		if (errno == ERANGE || l < INT_MIN || l > INT_MAX)
+			break;
 		if (*end == ':')
 			p = end + 1;
 		else if (*end != '\0')
@@ -122,24 +128,88 @@ static void init_retcodes(void)
 	}
 }
 
-TS_EXPORT long delete_module(const char *name, unsigned int flags);
+static int remove_directory(const char *path)
+{
+	struct stat st;
+	DIR *dir;
+	struct dirent *entry;
+	char full_path[PATH_MAX];
+
+	if (stat(path, &st) != 0 || !S_ISDIR(st.st_mode)) {
+		LOG("Directory %s not found, skip remove.\n", path);
+		return 0;
+	}
+
+	dir = opendir(path);
+	if (!dir) {
+		ERR("Failed to open directory %s: %m (errno: %d)\n", path, errno);
+		return -1;
+	}
+
+	while ((entry = readdir(dir)) != NULL) {
+		if (streq(entry->d_name, ".") || streq(entry->d_name, ".."))
+			continue;
+
+		snprintf(full_path, sizeof(full_path), "%s/%s", path, entry->d_name);
+
+		if (entry->d_type == DT_DIR) {
+			if (remove_directory(full_path) != 0) {
+				ERR("Failed to remove directory %s: %m\n", full_path);
+				goto fail;
+			}
+		} else {
+			if (remove(full_path) != 0) {
+				ERR("Failed to remove file %s: %m\n", full_path);
+				goto fail;
+			}
+		}
+	}
+
+	closedir(dir);
+
+	if (rmdir(path) != 0) {
+		ERR("Failed to remove directory %s: %m\n", path);
+		return -1;
+	}
+
+	return 0;
+
+fail:
+	closedir(dir);
+
+	return -1;
+}
 
 /*
- * FIXME: change /sys/module/<modname> to fake-remove a module
- *
  * Default behavior is to exit successfully. If this is not the intended
  * behavior, set TESTSUITE_DELETE_MODULE_RETCODES env var.
  */
-long delete_module(const char *modname, unsigned int flags)
+TS_EXPORT long delete_module(const char *name, unsigned int flags);
+
+/* TODO: add simple validation of the flags passed and remove the _maybe_unused_ workaround */
+long delete_module(const char *modname, _maybe_unused_ unsigned int flags)
 {
+	DECLARE_STRBUF_WITH_STACK(buf, PATH_MAX);
 	struct mod *mod;
+	int ret = 0;
 
 	init_retcodes();
 	mod = find_module(modules, modname);
 	if (mod == NULL)
 		return 0;
 
+	if (!strbuf_pushchars(&buf, "/sys/module/") ||
+	    !strbuf_pushchars(&buf, modname)) {
+		errno = ENOMEM;
+		return -1;
+	}
+
+	ret = remove_directory(strbuf_str(&buf));
+	if (ret != 0)
+		return ret;
+
 	errno = mod->errcode;
+
 	return mod->ret;
 }
 

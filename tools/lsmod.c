@@ -44,17 +44,13 @@ static int do_lsmod(int argc, char *argv[])
 	const char *null_config = NULL;
 	struct kmod_list *list, *itr;
 	int verbose = LOG_ERR;
-	int use_syslog = 0;
-	int err, r = 0;
+	bool use_syslog = false;
+	int err, c, r = 0;
 
-	for (;;) {
-		int c, idx = 0;
-		c = getopt_long(argc, argv, cmdopts_s, cmdopts, &idx);
-		if (c == -1)
-			break;
+	while ((c = getopt_long(argc, argv, cmdopts_s, cmdopts, NULL)) != -1) {
 		switch (c) {
 		case 's':
-			use_syslog = 1;
+			use_syslog = true;
 			break;
 		case 'v':
 			verbose++;
@@ -105,19 +101,15 @@ static int do_lsmod(int argc, char *argv[])
 		int use_count = kmod_module_get_refcnt(mod);
 		long size = kmod_module_get_size(mod);
 		struct kmod_list *holders, *hitr;
-		int first = 1;
+		int sep = ' ';
 
 		printf("%-19s %8ld  %d", name, size, use_count);
 		holders = kmod_module_get_holders(mod);
 		kmod_list_foreach(hitr, holders) {
 			struct kmod_module *hm = kmod_module_get_module(hitr);
 
-			if (!first) {
-				putchar(',');
-			} else {
-				putchar(' ');
-				first = 0;
-			}
+			putchar(sep);
+			sep = ',';
 
 			fputs(kmod_module_get_name(hm), stdout);
 			kmod_module_unref(hm);

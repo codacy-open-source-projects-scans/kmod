@@ -3,7 +3,6 @@
  * Copyright (C) 2011-2013  ProFUSION embedded systems
  */
 
-#include <errno.h>
 #include <inttypes.h>
 #include <stddef.h>
 #include <stdio.h>
@@ -23,7 +22,7 @@
 #undef ERR
 #include "testsuite.h"
 
-static int blacklist_1(const struct test *t)
+static int blacklist_1(void)
 {
 	struct kmod_ctx *ctx;
 	struct kmod_list *list = NULL, *l, *filtered;
@@ -31,15 +30,14 @@ static int blacklist_1(const struct test *t)
 	int err;
 	size_t len = 0;
 
-	const char *names[] = { "pcspkr", "pcspkr2", "floppy", "ext4", NULL };
-	const char **name;
+	static const char *const names[] = { "pcspkr", "pcspkr2", "floppy", "ext4" };
 
 	ctx = kmod_new(NULL, NULL);
 	if (ctx == NULL)
-		exit(EXIT_FAILURE);
+		return EXIT_FAILURE;
 
-	for (name = names; *name; name++) {
-		err = kmod_module_new_from_name(ctx, *name, &mod);
+	for (size_t i = 0; i < ARRAY_SIZE(names); i++) {
+		err = kmod_module_new_from_name(ctx, names[i], &mod);
 		if (err < 0)
 			goto fail_lookup;
 		list = kmod_list_append(list, mod);
@@ -81,12 +79,9 @@ fail_lookup:
 	return EXIT_FAILURE;
 }
 
-DEFINE_TEST(blacklist_1,
-	.description = "check if modules are correctly blacklisted",
-	.config = {
-		[TC_ROOTFS] = TESTSUITE_ROOTFS "test-blacklist/",
-	},
-	.need_spawn = true,
-);
+DEFINE_TEST(blacklist_1, .description = "check if modules are correctly blacklisted",
+	    .config = {
+		    [TC_ROOTFS] = TESTSUITE_ROOTFS "test-blacklist/",
+	    });
 
 TESTSUITE_MAIN();

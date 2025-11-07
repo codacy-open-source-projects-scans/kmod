@@ -7,7 +7,6 @@ build_module_playground = custom_target(
   command : [
     setup_modules,
     meson.project_source_root(),
-    meson.project_build_root(),
     'testsuite/module-playground', # do not prepend source/build root
   ],
   # The command ensures we don't do extra work, so the missing output token file
@@ -22,10 +21,10 @@ create_rootfs = custom_target(
   'create-rootfs',
   command : [
     setup_rootfs,
-    join_paths(meson.project_source_root(), 'testsuite/rootfs-pristine'),
-    join_paths(meson.project_build_root(), 'testsuite/rootfs'),
-    join_paths(meson.project_build_root(), 'testsuite/module-playground'),
-    join_paths(meson.project_build_root(), 'config.h'),
+    meson.project_source_root() / 'testsuite/rootfs-pristine',
+    meson.project_build_root() / 'testsuite/rootfs',
+    meson.project_build_root() / 'testsuite/module-playground',
+    meson.project_build_root() / 'config.h',
     sysconfdir,
     moduledir,
   ],
@@ -51,6 +50,7 @@ foreach mod : _test_override_mods
     mod,
     files('@0@.c'.format(mod)),
     include_directories : top_include,
+    c_args : '-DABS_TOP_BUILDDIR="@0@"'.format(meson.project_build_root()),
     dependencies : libdl,
     link_with : [libshared, libkmod_internal],
     gnu_symbol_visibility : 'hidden',
@@ -61,6 +61,7 @@ foreach mod : _test_override_mods
 endforeach
 
 testsuite_c_args = [
+  '-UNDEBUG',
   '-DTESTSUITE_ROOTFS="@0@/testsuite/rootfs/"'.format(meson.project_build_root()),
   '-DTOOLS_DIR="@0@/"'.format(meson.project_build_root()),
   '-DOVERRIDE_LIBDIR="@0@/testsuite/"'.format(meson.project_build_root()),
@@ -88,8 +89,9 @@ _testsuite = [
   'test-loaded',
   'test-modinfo',
   'test-modprobe',
+  'test-multi-softdep',
   'test-new-module',
-  'test-scratchbuf',
+  'test-remove',
   'test-strbuf',
   'test-testsuite',
   'test-util',

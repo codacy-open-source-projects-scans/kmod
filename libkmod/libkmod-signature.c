@@ -5,7 +5,7 @@
 
 #include <endian.h>
 #include <inttypes.h>
-#ifdef ENABLE_OPENSSL
+#if ENABLE_OPENSSL
 #include <openssl/pkcs7.h>
 #include <openssl/ssl.h>
 #endif
@@ -109,7 +109,7 @@ static bool fill_default(const char *mem, off_t size,
 	return true;
 }
 
-#ifdef ENABLE_OPENSSL
+#if ENABLE_OPENSSL
 
 struct pkcs7_private {
 	PKCS7 *pkcs7;
@@ -314,7 +314,7 @@ bool kmod_module_signature_info(const struct kmod_file *file,
 	if (size < (off_t)strlen(SIG_MAGIC))
 		return false;
 	size -= strlen(SIG_MAGIC);
-	if (memcmp(SIG_MAGIC, mem + size, strlen(SIG_MAGIC)) != 0)
+	if (!strstartswith(mem + size, SIG_MAGIC))
 		return false;
 
 	if (size < (off_t)sizeof(struct module_signature))

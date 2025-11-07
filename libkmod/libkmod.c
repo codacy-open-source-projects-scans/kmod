@@ -30,14 +30,14 @@
 
 static const struct {
 	const char *fn;
-	const char *prefix;
+	bool alias_prefix;
 } index_files[] = {
 	// clang-format off
-	[KMOD_INDEX_MODULES_DEP] = { .fn = "modules.dep", .prefix = "" },
-	[KMOD_INDEX_MODULES_ALIAS] = { .fn = "modules.alias", .prefix = "alias " },
-	[KMOD_INDEX_MODULES_SYMBOL] = { .fn = "modules.symbols", .prefix = "alias " },
-	[KMOD_INDEX_MODULES_BUILTIN_ALIAS] = { .fn = "modules.builtin.alias", .prefix = "" },
-	[KMOD_INDEX_MODULES_BUILTIN] = { .fn = "modules.builtin", .prefix = "" },
+	[KMOD_INDEX_MODULES_DEP] = { .fn = "modules.dep" },
+	[KMOD_INDEX_MODULES_ALIAS] = { .fn = "modules.alias", .alias_prefix = true },
+	[KMOD_INDEX_MODULES_SYMBOL] = { .fn = "modules.symbols", .alias_prefix = true },
+	[KMOD_INDEX_MODULES_BUILTIN_ALIAS] = { .fn = "modules.builtin.alias" },
+	[KMOD_INDEX_MODULES_BUILTIN] = { .fn = "modules.builtin" },
 	// clang-format on
 };
 
@@ -148,16 +148,19 @@ KMOD_EXPORT void kmod_set_userdata(struct kmod_ctx *ctx, const void *userdata)
 static int log_priority(const char *priority)
 {
 	char *endptr;
-	int prio;
+	long prio;
 
+	errno = 0;
 	prio = strtol(priority, &endptr, 10);
+	if (errno == ERANGE || prio < INT_MIN || prio > INT_MAX)
+		return 0;
 	if (endptr[0] == '\0' || isspace(endptr[0]))
 		return prio;
-	if (strncmp(priority, "err", 3) == 0)
+	if (strstartswith(priority, "err"))
 		return LOG_ERR;
-	if (strncmp(priority, "info", 4) == 0)
+	if (strstartswith(priority, "info"))
 		return LOG_INFO;
-	if (strncmp(priority, "debug", 5) == 0)
+	if (strstartswith(priority, "debug"))
 		return LOG_DEBUG;
 	return 0;
 }
@@ -334,11 +337,11 @@ struct kmod_module *kmod_pool_get_module(struct kmod_ctx *ctx, const char *key)
 	return mod;
 }
 
-void kmod_pool_add_module(struct kmod_ctx *ctx, struct kmod_module *mod, const char *key)
+int kmod_pool_add_module(struct kmod_ctx *ctx, struct kmod_module *mod, const char *key)
 {
 	DBG(ctx, "add %p key='%s'\n", mod, key);
 
-	hash_add(ctx->modules_by_name, key, mod);
+	return hash_add(ctx->modules_by_name, key, mod);
 }
 
 void kmod_pool_del_module(struct kmod_ctx *ctx, struct kmod_module *mod, const char *key)
@@ -355,6 +358,8 @@ static int kmod_lookup_alias_from_alias_bin(struct kmod_ctx *ctx,
 	int err, nmatch = 0;
 	struct index_file *idx;
 	struct index_value *realnames, *realname;
+
+	assert(*list == NULL);
 
 	if (ctx->indexes[index_number] != NULL) {
 		DBG(ctx, "use mmapped index '%s' for name=%s\n",
@@ -378,6 +383,7 @@ static int kmod_lookup_alias_from_alias_bin(struct kmod_ctx *ctx,
 
 	for (realname = realnames; realname; realname = realname->next) {
 		struct kmod_module *mod;
+		struct kmod_list *node;
 
 		err = kmod_module_new_from_alias(ctx, name, realname->value, &mod);
 		if (err < 0) {
@@ -386,7 +392,14 @@ static int kmod_lookup_alias_from_alias_bin(struct kmod_ctx *ctx,
 			goto fail;
 		}
 
-		*list = kmod_list_append(*list, mod);
+		node = kmod_list_append(*list, mod);
+		if (node == NULL) {
+			ERR(ctx, "out of memory\n");
+			kmod_module_unref(mod);
+			err = -ENOMEM;
+			goto fail;
+		}
+		*list = node;
 		nmatch++;
 	}
 
@@ -394,7 +407,7 @@ static int kmod_lookup_alias_from_alias_bin(struct kmod_ctx *ctx,
 	return nmatch;
 
 fail:
-	*list = kmod_list_remove_n_latest(*list, nmatch);
+	kmod_list_release(*list, kmod_module_unref);
 	index_values_free(realnames);
 	return err;
 }
@@ -415,20 +428,21 @@ int kmod_lookup_alias_from_aliases_file(struct kmod_ctx *ctx, const char *name,
 	return kmod_lookup_alias_from_alias_bin(ctx, KMOD_INDEX_MODULES_ALIAS, name, list);
 }
 
-static char *lookup_builtin_file(struct kmod_ctx *ctx, const char *name)
+static char *lookup_file(struct kmod_ctx *ctx, enum kmod_index index_number,
+			 const char *name)
 {
 	char *line;
 
-	if (ctx->indexes[KMOD_INDEX_MODULES_BUILTIN]) {
+	if (ctx->indexes[index_number]) {
 		DBG(ctx, "use mmapped index '%s' modname=%s\n",
-		    index_files[KMOD_INDEX_MODULES_BUILTIN].fn, name);
-		line = index_mm_search(ctx->indexes[KMOD_INDEX_MODULES_BUILTIN], name);
+		    index_files[index_number].fn, name);
+		line = index_mm_search(ctx->indexes[index_number], name);
 	} else {
 		struct index_file *idx;
 		char fn[PATH_MAX];
 
 		snprintf(fn, sizeof(fn), "%s/%s.bin", ctx->dirname,
-			 index_files[KMOD_INDEX_MODULES_BUILTIN].fn);
+			 index_files[index_number].fn);
 		DBG(ctx, "file=%s modname=%s\n", fn, name);
 
 		idx = index_file_open(fn);
@@ -444,13 +458,18 @@ static char *lookup_builtin_file(struct kmod_ctx *ctx, const char *name)
 	return line;
 }
 
+static bool lookup_builtin_file(struct kmod_ctx *ctx, const char *name)
+{
+	_cleanup_free_ char *line = lookup_file(ctx, KMOD_INDEX_MODULES_BUILTIN, name);
+
+	return line;
+}
+
 int kmod_lookup_alias_from_kernel_builtin_file(struct kmod_ctx *ctx, const char *name,
 					       struct kmod_list **list)
 {
 	struct kmod_list *l;
 	int ret;
-
-	assert(*list == NULL);
 
 	ret = kmod_lookup_alias_from_alias_bin(ctx, KMOD_INDEX_MODULES_BUILTIN_ALIAS,
 					       name, list);
@@ -466,71 +485,43 @@ int kmod_lookup_alias_from_kernel_builtin_file(struct kmod_ctx *ctx, const char 
 int kmod_lookup_alias_from_builtin_file(struct kmod_ctx *ctx, const char *name,
 					struct kmod_list **list)
 {
-	char *line;
-	int err = 0;
-
 	assert(*list == NULL);
 
-	line = lookup_builtin_file(ctx, name);
-	if (line != NULL) {
+	if (lookup_builtin_file(ctx, name)) {
 		struct kmod_module *mod;
+		struct kmod_list *node;
+		int err;
 
 		err = kmod_module_new_from_name(ctx, name, &mod);
 		if (err < 0) {
 			ERR(ctx, "Could not create module from name %s: %s\n", name,
 			    strerror(-err));
-			goto finish;
+			return err;
 		}
 
 		/* already mark it as builtin since it's being created from
 		 * this index */
 		kmod_module_set_builtin(mod, true);
-		*list = kmod_list_append(*list, mod);
-		if (*list == NULL)
-			err = -ENOMEM;
+		node = kmod_list_append(*list, mod);
+		if (node == NULL) {
+			ERR(ctx, "out of memory\n");
+			kmod_module_unref(mod);
+			return -ENOMEM;
+		}
+		*list = node;
 	}
 
-finish:
-	free(line);
-	return err;
+	return 0;
 }
 
 bool kmod_lookup_alias_is_builtin(struct kmod_ctx *ctx, const char *name)
 {
-	_cleanup_free_ char *line;
-
-	line = lookup_builtin_file(ctx, name);
-
-	return line != NULL;
+	return lookup_builtin_file(ctx, name);
 }
 
 char *kmod_search_moddep(struct kmod_ctx *ctx, const char *name)
 {
-	struct index_file *idx;
-	char fn[PATH_MAX];
-	char *line;
-
-	if (ctx->indexes[KMOD_INDEX_MODULES_DEP]) {
-		DBG(ctx, "use mmapped index '%s' modname=%s\n",
-		    index_files[KMOD_INDEX_MODULES_DEP].fn, name);
-		return index_mm_search(ctx->indexes[KMOD_INDEX_MODULES_DEP], name);
-	}
-
-	snprintf(fn, sizeof(fn), "%s/%s.bin", ctx->dirname,
-		 index_files[KMOD_INDEX_MODULES_DEP].fn);
-
-	DBG(ctx, "file=%s modname=%s\n", fn, name);
-
-	idx = index_file_open(fn);
-	if (idx == NULL) {
-		DBG(ctx, "could not open moddep file '%s'\n", fn);
-		return NULL;
-	}
-
-	line = index_search(idx, name);
-	index_file_close(idx);
-
-	return line;
+	return lookup_file(ctx, KMOD_INDEX_MODULES_DEP, name);
 }
 
 int kmod_lookup_alias_from_moddep_file(struct kmod_ctx *ctx, const char *name,
@@ -538,6 +529,8 @@ int kmod_lookup_alias_from_moddep_file(struct kmod_ctx *ctx, const char *name,
 {
 	char *line;
 	int n = 0;
+
+	assert(*list == NULL);
 
 	/*
 	 * Module names do not contain ':'. Return early if we know it will
@@ -549,6 +542,7 @@ int kmod_lookup_alias_from_moddep_file(struct kmod_ctx *ctx, const char *name,
 	line = kmod_search_moddep(ctx, name);
 	if (line != NULL) {
 		struct kmod_module *mod;
+		struct kmod_list *node;
 
 		n = kmod_module_new_from_name(ctx, name, &mod);
 		if (n < 0) {
@@ -557,7 +551,14 @@ int kmod_lookup_alias_from_moddep_file(struct kmod_ctx *ctx, const char *name,
 			goto finish;
 		}
 
-		*list = kmod_list_append(*list, mod);
+		node = kmod_list_append(*list, mod);
+		if (node == NULL) {
+			ERR(ctx, "out of memory\n");
+			kmod_module_unref(mod);
+			n = -ENOMEM;
+			goto finish;
+		}
+		*list = node;
 		kmod_module_parse_depline(mod, line);
 	}
 
@@ -574,12 +575,15 @@ int kmod_lookup_alias_from_config(struct kmod_ctx *ctx, const char *name,
 	struct kmod_list *l;
 	int err, nmatch = 0;
 
+	assert(*list == NULL);
+
 	kmod_list_foreach(l, config->aliases) {
 		const char *aliasname = kmod_alias_get_name(l);
 		const char *modname = kmod_alias_get_modname(l);
 
 		if (fnmatch(aliasname, name, 0) == 0) {
 			struct kmod_module *mod;
+			struct kmod_list *node;
 
 			err = kmod_module_new_from_alias(ctx, aliasname, modname, &mod);
 			if (err < 0) {
@@ -589,7 +593,14 @@ int kmod_lookup_alias_from_config(struct kmod_ctx *ctx, const char *name,
 				goto fail;
 			}
 
-			*list = kmod_list_append(*list, mod);
+			node = kmod_list_append(*list, mod);
+			if (node == NULL) {
+				ERR(ctx, "out of memory\n");
+				kmod_module_unref(mod);
+				err = -ENOMEM;
+				goto fail;
+			}
+			*list = node;
 			nmatch++;
 		}
 	}
@@ -597,7 +608,7 @@ int kmod_lookup_alias_from_config(struct kmod_ctx *ctx, const char *name,
 	return nmatch;
 
 fail:
-	*list = kmod_list_remove_n_latest(*list, nmatch);
+	kmod_list_release(*list, kmod_module_unref);
 	return err;
 }
 
@@ -607,6 +618,8 @@ int kmod_lookup_alias_from_commands(struct kmod_ctx *ctx, const char *name,
 	struct kmod_config *config = ctx->config;
 	struct kmod_list *l, *node;
 	int err, nmatch = 0;
+
+	assert(*list == NULL);
 
 	kmod_list_foreach(l, config->install_commands) {
 		const char *modname = kmod_command_get_modname(l);
@@ -625,6 +638,7 @@ int kmod_lookup_alias_from_commands(struct kmod_ctx *ctx, const char *name,
 			node = kmod_list_append(*list, mod);
 			if (node == NULL) {
 				ERR(ctx, "out of memory\n");
+				kmod_module_unref(mod);
 				return -ENOMEM;
 			}
 
@@ -661,6 +675,7 @@ int kmod_lookup_alias_from_commands(struct kmod_ctx *ctx, const char *name,
 			node = kmod_list_append(*list, mod);
 			if (node == NULL) {
 				ERR(ctx, "out of memory\n");
+				kmod_module_unref(mod);
 				return -ENOMEM;
 			}
 
@@ -813,7 +828,7 @@ KMOD_EXPORT int kmod_dump_index(struct kmod_ctx *ctx, enum kmod_index type, int 
 
 	if (ctx->indexes[type] != NULL) {
 		DBG(ctx, "use mmapped index '%s'\n", index_files[type].fn);
-		index_mm_dump(ctx->indexes[type], fd, index_files[type].prefix);
+		index_mm_dump(ctx->indexes[type], fd, index_files[type].alias_prefix);
 	} else {
 		char fn[PATH_MAX];
 		struct index_file *idx;
@@ -826,7 +841,7 @@ KMOD_EXPORT int kmod_dump_index(struct kmod_ctx *ctx, enum kmod_index type, int 
 		if (idx == NULL)
 			return -ENOSYS;
 
-		index_dump(idx, fd, index_files[type].prefix);
+		index_dump(idx, fd, index_files[type].alias_prefix);
 		index_file_close(idx);
 	}
 

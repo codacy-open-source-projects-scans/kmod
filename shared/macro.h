@@ -6,7 +6,7 @@
 
 #include <stddef.h>
 
-#if defined(HAVE_STATIC_ASSERT)
+#if HAVE_STATIC_ASSERT
 #define assert_cc(expr) _Static_assert((expr), #expr)
 #else
 #define assert_cc(expr)                              \
@@ -37,20 +37,40 @@
 #define XCONCATENATE(x, y) x##y
 #define CONCATENATE(x, y) XCONCATENATE(x, y)
 #define UNIQ(x) CONCATENATE(x, __COUNTER__)
+#define UNIQ_T(x, uniq) CONCATENATE(__unique_prefix_, CONCATENATE(x, uniq))
 
 /* Attributes */
 
+#define _maybe_unused_ __attribute__((unused))
 #define _must_check_ __attribute__((warn_unused_result))
 #define _printf_format_(a, b) __attribute__((format(printf, a, b)))
-#define _always_inline_ __inline__ __attribute__((always_inline))
-#define _cleanup_(x) __attribute__((cleanup(x)))
+#define _sentinel_ __attribute__((sentinel))
+#define _used_ __attribute__((used))
+#define _retain_ __attribute__((retain))
+#define _section_(a) __attribute__((section(a)))
+#define _alignedptr_ __attribute__((aligned(sizeof(void *))))
+
+#if defined(__clang_analyzer__)
+#define _clang_suppress_alloc_ __attribute__((suppress))
+#else
+#define _clang_suppress_alloc_
+#endif
+
 #define _nonnull_(...) __attribute__((nonnull(__VA_ARGS__)))
 #define _nonnull_all_ __attribute__((nonnull))
+
+#define _cleanup_(x) _clang_suppress_alloc_ __attribute__((cleanup(x)))
+
+static inline void freep(void *p)
+{
+	free(*(void **)p);
+}
+#define _cleanup_free_ _clang_suppress_alloc_ __attribute__((cleanup(freep)))
 
 /* Define C11 noreturn without <stdnoreturn.h> and even on older gcc
  * compiler versions */
 #ifndef noreturn
-#if defined(HAVE_NORETURN)
+#if HAVE_NORETURN
 #define noreturn _Noreturn
 #else
 #define noreturn __attribute__((noreturn))

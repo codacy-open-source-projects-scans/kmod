@@ -1,16 +1,15 @@
 project(
   'kmod',
   'c',
-  version : '33',
+  version : '34',
   license : ['LGPLv2.1', 'GPL-2.0-or-later'],
-  meson_version : '>=0.60.0',
+  meson_version : '>=0.61.0',
   default_options : [
     'c_std=gnu11',
     'b_pie=true',
     'warning_level=2',
     'prefix=/usr',
     'sysconfdir=/etc',
-    'localstatedir=/var',
   ]
 )
 
@@ -28,8 +27,6 @@ cc = meson.get_compiler('c')
 # We rely on the glibc variant of basename, et al.
 cdata.set10('_GNU_SOURCE', true)
 
-# TODO: Once meson-only, adjust all #ifdef X to if X and convert .set to .set10
-
 ################################################################################
 # Function and structure checks
 ################################################################################
@@ -39,9 +36,7 @@ _funcs = [
   'secure_getenv',
 ]
 foreach func : _funcs
-  if cc.has_function(func, args : '-D_GNU_SOURCE')
-    cdata.set('HAVE_@0@'.format(func.to_upper()), true)
-  endif
+  cdata.set10('HAVE_@0@'.format(func.to_upper()), cc.has_function(func, args : '-D_GNU_SOURCE'))
 endforeach
 
 # Meson has some amount of support for finding builtins by passing the symbol
@@ -70,18 +65,6 @@ foreach tuple : _builtins
   cdata.set10('HAVE_@0@'.format(builtin.to_upper()), have)
 endforeach
 
-# dietlibc doesn't have st.st_mtim struct member
-# XXX: we use both st_mtim and st_mtime ... unify and test
-foreach tuple : [['struct stat', 'st_mtim', '#include <sys/stat.h>']]
-  struct = tuple[0]
-  member = tuple[1]
-  prefix = tuple[2]
-  if cc.has_member(struct, member, prefix : prefix, args : '-D_GNU_SOURCE')
-    cdata.set('HAVE_@0@_@1@'.format(struct.underscorify().to_upper(),
-                                    member.to_upper()), true)
-  endif
-endforeach
-
 # basename may be only available in libgen.h with the POSIX behavior,
 # not desired here
 _decls = [
@@ -95,17 +78,8 @@ foreach tuple : _decls
   cdata.set10('HAVE_DECL_@0@'.format(decl.to_upper()), have)
 endforeach
 
-if cc.compiles('_Static_assert(1, "Test");', name : '_Static_assert')
-  cdata.set('HAVE_STATIC_ASSERT', true)
-endif
-
-if cc.compiles('''
-    #include <stdlib.h>
-    _Noreturn int foo(void) { exit(0); }
-    ''',
-    name : '_Noreturn')
-  cdata.set('HAVE_NORETURN', true)
-endif
+cdata.set10('HAVE_STATIC_ASSERT', cc.compiles('_Static_assert(1, "Test");', name : '_Static_assert'))
+cdata.set10('HAVE_NORETURN', cc.compiles('#include <stdlib.h>; _Noreturn int foo(void) { exit(0); }', name : '_Noreturn'))
 
 ################################################################################
 # Default CFLAGS and LDFLAGS
@@ -113,41 +87,38 @@ endif
 
 add_project_arguments(
   cc.get_supported_arguments([
-    '-Wno-inline',
-    '-Wvla',
-    '-Wundef',
-    '-Wformat=2',
-    '-Wlogical-op',
-    '-Wsign-compare',
-    '-Wformat-security',
-    '-Wmissing-include-dirs',
-    '-Wformat-nonliteral',
-    '-Wold-style-definition',
-    '-Wpointer-arith',
-    '-Winit-self',
-    '-Wdeclaration-after-statement',
-    '-Wfloat-equal',
-    '-Wmissing-prototypes',
-    '-Wstrict-prototypes',
-    '-Wredundant-decls',
-    '-Wmissing-declarations',
-    '-Wmissing-noreturn',
-    '-Wshadow',
-    '-Wendif-labels',
-    '-Wstrict-aliasing=3',
-    '-Wwrite-strings',
-    '-Wno-long-long',
-    '-Wno-overlength-strings',
-    '-Wno-unused-parameter',
-    '-Wno-missing-field-initializers',
-    '-Wnested-externs',
-    '-Wchar-subscripts',
-    '-Wtype-limits',
-    '-Wuninitialized',
-    '-fno-common',
+    '-fdata-sections',
     '-fdiagnostics-show-option',
     '-ffunction-sections',
-    '-fdata-sections',
+    '-fno-common',
+    '-Wchar-subscripts',
+    '-Wendif-labels',
+    '-Wfloat-equal',
+    '-Wformat=2',
+    '-Wformat-nonliteral',
+    '-Wformat-security',
+    '-Winit-self',
+    '-Wlogical-op',
+    '-Wmissing-declarations',
+    '-Wmissing-include-dirs',
+    '-Wmissing-noreturn',
+    '-Wmissing-prototypes',
+    '-Wnested-externs',
+    '-Wno-attributes',
+    '-Wno-declaration-after-statement',
+    '-Wno-unused-parameter',
+    '-Wold-style-definition',
+    '-Wpointer-arith',
+    '-Wredundant-decls',
+    '-Wshadow',
+    '-Wsign-compare',
+    '-Wstrict-aliasing=3',
+    '-Wstrict-prototypes',
+    '-Wtype-limits',
+    '-Wundef',
+    '-Wuninitialized',
+    '-Wvla',
+    '-Wwrite-strings',
   ]),
   language : 'c'
 )
@@ -178,49 +149,91 @@ module_compressions = ''
 module_signatures = ''
 
 features = []
+dep_map = {}
+
+# keep in sync with meson_options.txt
+dlopen_all = get_option('dlopen').contains('all')
 
 #-------------------------------------------------------------------------------
 # Directories
 #-------------------------------------------------------------------------------
 
+prefixdir = get_option('prefix')
 sysconfdir = get_option('sysconfdir')
-cdata.set_quoted('SYSCONFDIR', sysconfdir)
-
-libdir = join_paths(get_option('prefix'), get_option('libdir'))
+bindir = prefixdir / get_option('bindir')
+sbindir = prefixdir / get_option('sbindir')
+includedir = prefixdir / get_option('includedir')
+libdir = prefixdir / get_option('libdir')
+datadir = prefixdir / get_option('datadir')
 
 distconfdir = get_option('distconfdir')
-if distconfdir == ''
-  distconfdir = libdir
-endif
-cdata.set_quoted('DISTCONFDIR', distconfdir)
-
-# The default moduledir is hard-coded due to historical reasons
 moduledir = get_option('moduledir')
-if moduledir == ''
-  moduledir = '/lib/modules'
-endif
-cdata.set_quoted('MODULE_DIRECTORY', moduledir)
+
+bashcompletiondir = get_option('bashcompletiondir')
+fishcompletiondir = get_option('fishcompletiondir')
+zshcompletiondir = get_option('zshcompletiondir')
+
+cdata.set_quoted('SYSCONFDIR', sysconfdir)
+
+_customdirs = [
+  # The defaults are hard-coded due to historical reasons
+  ['distconfdir', prefixdir / 'lib',  'DISTCONFDIR'],
+  ['moduledir',   '/lib/modules',     'MODULE_DIRECTORY'],
+]
+
+foreach tuple : _customdirs
+  dir_option = tuple[0]
+  def_path = tuple[1]
+  quoted = tuple[2]
+
+  customdir = get_variable(dir_option)
+  if customdir == ''
+    customdir = def_path
+  else
+    if not customdir.startswith('/')
+      error('User provided @0@, \'@1@\' is not an absolute path.'
+          .format(dir_option, customdir))
+    endif
+    # Strip all leading/trailing and re-add only the leading one.
+    customdir = '/' / customdir.strip('/')
+  endif
+  cdata.set_quoted(quoted, customdir)
+  set_variable(dir_option, customdir)
+endforeach
+
+foreach confdir : [sysconfdir, distconfdir]
+  install_emptydir(confdir / 'depmod.d')
+  install_emptydir(confdir / 'modprobe.d')
+endforeach
 
 _completiondirs = [
-  ['bashcompletiondir', 'bash-completion', 'bash-completion/completions', 'shell-completion/bash/@0@'],
-  ['fishcompletiondir', 'fish',            'fish/vendor_functions.d',     'shell-completion/fish/@0@.fish'],
-  ['zshcompletiondir',  '',                'zsh/site-functions',          'shell-completion/zsh/_@0@'],
+  ['bash', 'bash-completion', 'bash-completion' / 'completions', '@0@'],
+  ['fish', 'fish',            'fish' / 'vendor_functions.d',     '@0@.fish'],
+  ['zsh',  '',                'zsh' / 'site-functions',          '_@0@'],
 ]
 
 foreach tuple : _completiondirs
-  dir_option = tuple[0]
+  dir_option = tuple[0] + 'completiondir'
   pkg_dep = tuple[1]
   def_path = tuple[2]
-  ins_path = tuple[3]
+  ins_name = tuple[3]
 
-  completiondir = get_option(dir_option)
+  completiondir = get_variable(dir_option)
   if completiondir == ''
     completion = dependency(pkg_dep, required : false)
     if completion.found()
-      completiondir = completion.get_variable(pkgconfig : 'completionsdir')
+      completion_prefix = completion.get_variable(pkgconfig : 'prefix')
+      if completion_prefix != prefixdir
+        warning('User provided prefix \'@0@\' differs from @1@ one \'@2@\'.'
+                .format(prefixdir, pkg_dep, completion_prefix))
+        warning('Not installing completion. To re-enable, manually set @0@.'
+                .format(dir_option))
+        completiondir = 'no'
+      else
+        completiondir = completion.get_variable(pkgconfig : 'completionsdir')
+      endif
     else
-      completiondir = join_paths(get_option('prefix'), get_option('datadir'),
-                                 def_path)
+      completiondir = datadir / def_path
     endif
   endif
 
@@ -233,13 +246,12 @@ foreach tuple : _completiondirs
   if completiondir != 'no'
     foreach comp : _completions
       install_data(
-        files(ins_path.format(comp)),
+        files('shell-completion' / tuple[0] / ins_name.format(comp)),
         install_dir : completiondir,
       )
     endforeach
   endif
 
-  # NEEDED solely for bash/kmod below
   set_variable(dir_option, completiondir)
 endforeach
 
@@ -254,39 +266,59 @@ endif
 # Compression support
 #-------------------------------------------------------------------------------
 
-zstd = dependency('libzstd', version : '>= 1.4.4', required : get_option('zstd'))
-if zstd.found()
-  cdata.set('ENABLE_ZSTD', true)
-  module_compressions += 'zstd '
-endif
-features += ['@0@ZSTD'.format(zstd.found() ? '+' : '-')]
+_compression = [
+  ['zstd', 'libzstd', '>= 1.4.4'],
+  ['xz',   'liblzma', '>= 4.99'],
+  ['zlib', 'zlib',    '>= 0'],
+]
 
-xz = dependency('liblzma', version : '>= 4.99', required : get_option('xz'))
-if xz.found()
-  cdata.set('ENABLE_XZ', true)
-  module_compressions += 'xz '
-endif
-features += ['@0@XZ'.format(xz.found() ? '+' : '-')]
+foreach tuple : _compression
+  opt = tuple[0]
+  pkg_dep = tuple[1]
+  pkg_dep_version = tuple[2]
 
-zlib = dependency('zlib', required : get_option('zlib'))
-if zlib.found()
-  cdata.set('ENABLE_ZLIB', true)
-  module_compressions += 'zlib '
-endif
-features += ['@0@ZLIB'.format(zlib.found() ? '+' : '-')]
+  dlopen = dlopen_all or get_option('dlopen').contains(opt)
+  if not dlopen_all and dlopen and get_option(opt).disabled()
+    error('Incompatiable options: dlopen=@0@ for disabled @0@'.format(opt))
+  endif
+
+  dep = dependency(pkg_dep, version : pkg_dep_version, required : get_option(opt))
+  have = dep.found()
+  if have and dlopen
+    dep = dep.partial_dependency(compile_args : true, includes : true)
+  endif
+
+  cdata.set10('ENABLE_' + opt.to_upper(), have)
+  cdata.set10('ENABLE_' + opt.to_upper() + '_DLOPEN', have and dlopen)
+
+  if have
+    module_compressions += '@0@ '.format(opt)
+  endif
+
+  features += ['@0@@1@'.format(have ? '+' : '-', opt.to_upper())]
+  dep_map += {opt : dep}
+endforeach
 
 #-------------------------------------------------------------------------------
 # Signed modules
 #-------------------------------------------------------------------------------
 
-crypto = dependency('libcrypto', version : '>= 1.1.0', required : get_option('openssl'))
-if crypto.found()
-  cdata.set('ENABLE_OPENSSL', true)
+opt = 'openssl'
+dep = dependency('libcrypto', version : '>= 1.1.0', required : get_option(opt))
+have = dep.found()
+
+if have
   module_signatures = 'PKCS7 legacy'
 else
   module_signatures = 'legacy'
 endif
-features += ['@0@LIBCRYPTO'.format(crypto.found() ? '+' : '-')]
+cdata.set10('ENABLE_' + opt.to_upper(), have)
+features += ['@0@@1@'.format(have ? '+' : '-', opt.to_upper())]
+dep_map += {opt : dep}
+
+#-------------------------------------------------------------------------------
+# Config output
+#-------------------------------------------------------------------------------
 
 cdata.set_quoted('KMOD_FEATURES', ' '.join(features))
 
@@ -306,16 +338,17 @@ libshared = static_library(
   files(
     'shared/array.c',
     'shared/array.h',
+    'shared/elf-note.h',
     'shared/hash.c',
     'shared/hash.h',
     'shared/macro.h',
     'shared/missing.h',
-    'shared/scratchbuf.c',
-    'shared/scratchbuf.h',
     'shared/strbuf.c',
     'shared/strbuf.h',
     'shared/util.c',
     'shared/util.h',
+    'shared/tmpfile-util.c',
+    'shared/tmpfile-util.h',
   ),
   gnu_symbol_visibility : 'hidden',
   install : false,
@@ -338,24 +371,29 @@ libkmod_files = files(
 )
 
 libkmod_deps = []
+cdeps = []
 
-if zstd.found()
+if not cc.has_function('dlopen')
+  cdeps += cc.find_library('dl', required : true)
+endif
+
+if dep_map.get('zstd').found()
   libkmod_files += files('libkmod/libkmod-file-zstd.c')
-  libkmod_deps += zstd
+  libkmod_deps += dep_map['zstd']
 endif
 
-if xz.found()
+if dep_map.get('xz').found()
   libkmod_files += files('libkmod/libkmod-file-xz.c')
-  libkmod_deps += xz
+  libkmod_deps += dep_map['xz']
 endif
 
-if zlib.found()
+if dep_map.get('zlib').found()
   libkmod_files += files('libkmod/libkmod-file-zlib.c')
-  libkmod_deps += zlib
+  libkmod_deps += dep_map['zlib']
 endif
 
-if crypto.found()
-  libkmod_deps += crypto
+if dep_map.get('openssl').found()
+  libkmod_deps += dep_map['openssl']
 endif
 
 install_headers('libkmod/libkmod.h')
@@ -363,13 +401,13 @@ install_headers('libkmod/libkmod.h')
 libkmod = shared_library(
   'kmod',
   libkmod_files,
-  dependencies : libkmod_deps,
+  dependencies : libkmod_deps + cdeps,
   link_with : libshared,
-  link_args : ['-Wl,--version-script', join_paths(meson.current_source_dir(),
-                                                  'libkmod/libkmod.sym')],
+  link_args : ['-Wl,--version-script', meson.current_source_dir() /
+                                                  'libkmod/libkmod.sym'],
   link_depends : files('libkmod/libkmod.sym'),
   gnu_symbol_visibility : 'hidden',
-  version : '2.5.0',
+  version : '2.5.1',
   install : true,
 )
 
@@ -378,12 +416,13 @@ pkg.generate(
   description : 'Library to deal with kernel modules',
   libraries : libkmod,
   requires_private : libkmod_deps,
+  libraries_private : cdeps,
 )
 
 libkmod_internal = static_library(
   'kmod-internal',
   objects : libkmod.extract_all_objects(recursive : true),
-  dependencies : libkmod_deps,
+  dependencies : libkmod_deps + cdeps,
   install : false,
 )
 
@@ -397,6 +436,8 @@ kmod_sources = files(
   'tools/lsmod.c',
   'tools/modinfo.c',
   'tools/modprobe.c',
+  'tools/opt.c',
+  'tools/opt.h',
   'tools/rmmod.c',
   'tools/static-nodes.c',
 )
@@ -414,19 +455,25 @@ _kmod_variables = [
   'sysconfdir=' + sysconfdir,
   'distconfdir=' + distconfdir,
   'module_directory=' + moduledir,
+]
+
+# Don't (space) escape variables with space-separated lists, for consistency
+# with the autotools build.
+_kmod_unescaped_variables = [
   'module_signatures=' + module_signatures,
 ]
 
 # XXX: Support for empty variables was added in meson v1.4.0.
 # pkgconf behaves identically on missing and empty variable.
 if module_compressions != ''
-  _kmod_variables += ['module_compressions=' + module_compressions]
+  _kmod_unescaped_variables += ['module_compressions=' + module_compressions]
 endif
 
 pkg.generate(
   name : 'kmod',
   description : 'Tools to deal with kernel modules',
-  install_dir : join_paths(get_option('datadir'), 'pkgconfig'),
+  install_dir : datadir / 'pkgconfig',
+  unescaped_variables : _kmod_unescaped_variables,
   variables : _kmod_variables,
 )
 
@@ -439,13 +486,15 @@ _tools = [
   'rmmod',
 ]
 
-kmod_symlink = find_program('scripts/kmod-symlink.sh')
-foreach tool : _tools
-  if get_option('tools')
-    symlink = join_paths(get_option('bindir'), tool)
-    meson.add_install_script(kmod_symlink, symlink)
-  endif
-endforeach
+if get_option('tools')
+  mkdir_p = 'mkdir -p "$DESTDIR@0@"'
+  meson.add_install_script('sh', '-c', mkdir_p.format(sbindir))
+
+  ln_s = 'ln -sfr "$DESTDIR@0@/kmod" "$DESTDIR@1@"'
+  foreach tool : _tools
+    meson.add_install_script('sh', '-c', ln_s.format(bindir, sbindir / tool))
+  endforeach
+endif
 
 internal_kmod_symlinks = []
 
@@ -486,15 +535,30 @@ if get_option('docs')
   subdir('libkmod/docs')
 endif
 
+# ------------------------------------------------------------------
+# summary
+# ------------------------------------------------------------------
+
 summary({
-  'moduledir'   : moduledir,
-  'prefix'      : get_option('prefix'),
+  'prefix'      : prefixdir,
   'sysconfdir'  : sysconfdir,
-  'distconfdir' : distconfdir,
+  'bindir'      : bindir,
+  'sbindir'     : sbindir,
+  'includedir'  : includedir,
   'libdir'      : libdir,
-  'includedir'  : join_paths(get_option('prefix'), get_option('includedir')),
-  'bindir'      : join_paths(get_option('prefix'), get_option('bindir')),
+  'datadir'     : datadir,
 }, section : 'Directories')
+
+summary({
+  'distconfdir' : distconfdir,
+  'moduledir'   : moduledir,
+}, section : 'Kmod specific')
+
+summary({
+  'bashcompletiondir' : bashcompletiondir,
+  'fishcompletiondir' : fishcompletiondir,
+  'zshcompletiondir'  : zshcompletiondir,
+}, section : 'Shell completions')
 
 summary({
   'tools'           : get_option('tools'),
@@ -503,8 +567,14 @@ summary({
   'build-tests'     : get_option('build-tests'),
   'manpages'        : get_option('manpages'),
   'docs'            : get_option('docs'),
+  'dlopen'          : get_option('dlopen'),
 }, section : 'Options')
 
 summary({
   'features'    : ' '.join(features)
 }, section : '')
+
+summary({
+  'Compiler'        : cc.get_id() + ' (' + cc.version() + ')',
+  'Linker'          : cc.get_linker_id(),
+}, section : 'Build tools')

@@ -31,11 +31,12 @@ foreach tuple : _man_pages
     capture : true,
     build_by_default : get_option('manpages'),
     install : true,
-    install_dir : join_paths(get_option('mandir'), 'man@0@'.format(section))
+    install_dir : get_option('mandir') / 'man@0@'.format(section)
   )
 endforeach
 
 _man_aliases = [
+  ['5', 'modprobe.conf', 'modprobe.d.5'],
   ['5', 'modules.dep.bin', 'modules.dep.5'],
 ]
 
@@ -51,6 +52,6 @@ foreach tuple : _man_aliases
     capture : true,
     build_by_default : get_option('manpages'),
     install : true,
-    install_dir : join_paths(get_option('mandir'), 'man@0@'.format(section))
+    install_dir : get_option('mandir') / 'man@0@'.format(section)
   )
 endforeach

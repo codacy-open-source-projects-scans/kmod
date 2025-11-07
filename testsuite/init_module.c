@@ -76,12 +76,16 @@ static void parse_retcodes(struct mod **_modules, const char *s)
 			break;
 
 		l = strtol(p, &end, 0);
-		if (end == p || *end != ':')
+		if (end == p || *end != ':' || errno == ERANGE || l < INT_MIN ||
+		    l > INT_MAX)
 			break;
 		ret = (int)l;
 		p = end + 1;
 
+		errno = 0;
 		l = strtol(p, &end, 0);
+		if (errno == ERANGE || l < INT_MIN || l > INT_MAX)
+			break;
 		if (*end == ':')
 			p = end + 1;
 		else if (*end != '\0')
@@ -102,7 +106,7 @@ static void parse_retcodes(struct mod **_modules, const char *s)
 	}
 }
 
-static int write_one_line_file(const char *fn, const char *line, int len)
+static int write_one_line_file(const char *fn, const char *line)
 {
 	FILE *f;
 	int r;
@@ -148,7 +152,7 @@ static int create_sysfs_files(const char *modname)
 	assert(mkdir_p(buf, len, 0755) >= 0);
 
 	strcpy(buf + len, "/initstate");
-	return write_one_line_file(buf, "live\n", strlen("live\n"));
+	return write_one_line_file(buf, "live\n");
 }
 
 static struct mod *find_module(struct mod *_modules, const char *modname)
@@ -220,12 +224,14 @@ TS_EXPORT long init_module(void *mem, unsigned long len, const char *args);
  * This is because we want to be able to pass dummy modules (and not real
  * ones) and it still work.
  */
-long init_module(void *mem, unsigned long len, const char *args)
+/* TODO: add simple validation of the args passed and remove the _maybe_unused_ workaround */
+long init_module(void *mem, unsigned long len, _maybe_unused_ const char *args)
 {
 	const char *modname;
 	struct kmod_elf *elf;
 	struct mod *mod;
 	const void *buf;
+	uint64_t off;
 	uint64_t bufsize;
 	int err;
 	uint8_t class;
@@ -233,16 +239,23 @@ long init_module(void *mem, unsigned long len, const char *args)
 
 	init_retcodes();
 
-	elf = kmod_elf_new(mem, len);
-	if (elf == NULL)
-		return 0;
+	if (mem == NULL) {
+		errno = EFAULT;
+		return -1;
+	}
 
-	err = kmod_elf_get_section(elf, ".gnu.linkonce.this_module", &buf, &bufsize);
+	err = kmod_elf_new(mem, len, &elf);
+	if (err < 0) {
+		errno = -err;
+		return -1;
+	}
+
+	err = kmod_elf_get_section(elf, ".gnu.linkonce.this_module", &off, &bufsize);
+	buf = (const char *)kmod_elf_get_memory(elf) + off;
 	kmod_elf_unref(elf);
 
-	/* We couldn't parse the ELF file. Just exit as if it was successful */
 	if (err < 0)
-		return 0;
+		return -1;
 
 	/* We need to open both 32 and 64 bits module - hack! */
 	class = elf_identify(mem);
@@ -288,7 +301,8 @@ static int check_kernel_version(int major, int minor)
 
 TS_EXPORT int finit_module(const int fd, const char *args, const int flags);
 
-int finit_module(const int fd, const char *args, const int flags)
+/* TODO: add simple validation of the flags passed and remove the _maybe_unused_ workaround */
+int finit_module(const int fd, const char *args, _maybe_unused_ const int flags)
 {
 	int err;
 	void *mem;
@@ -318,12 +332,14 @@ TS_EXPORT long int syscall(long int __sysno, ...)
 	va_list ap;
 	long ret;
 
-	if (__sysno == -1) {
+	switch (__sysno) {
+	case -1:
+#ifdef __NR_riscv_hwprobe
+	case __NR_riscv_hwprobe:
+#endif
 		errno = ENOSYS;
 		return -1;
-	}
-
-	if (__sysno == __NR_finit_module) {
+	case __NR_finit_module:;
 		const char *args;
 		int flags;
 		int fd;
@@ -338,19 +354,11 @@ TS_EXPORT long int syscall(long int __sysno, ...)
 
 		va_end(ap);
 		return ret;
-	}
-
-	if (__sysno == __NR_gettid) {
-		static void *nextlib = NULL;
+	case __NR_gettid:;
 		static long (*nextlib_syscall)(long number, ...);
 
 		if (nextlib_syscall == NULL) {
-#ifdef RTLD_NEXT
-			nextlib = RTLD_NEXT;
-#else
-			nextlib = dlopen("libc.so.6", RTLD_LAZY);
-#endif
-			nextlib_syscall = dlsym(nextlib, "syscall");
+			nextlib_syscall = dlsym(RTLD_NEXT, "syscall");
 			if (nextlib_syscall == NULL) {
 				fprintf(stderr,
 					"FIXME FIXME FIXME: could not load syscall symbol: %s\n",

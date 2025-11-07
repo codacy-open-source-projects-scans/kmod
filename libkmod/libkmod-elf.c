@@ -6,7 +6,6 @@
 #include <assert.h>
 #include <elf.h>
 #include <endian.h>
-#include <errno.h>
 #include <limits.h>
 #include <stdlib.h>
 #include <string.h>
@@ -27,12 +26,29 @@ struct kmod_modversion64 {
 	char name[64 - sizeof(uint64_t)];
 };
 
+enum kmod_elf_section {
+	KMOD_ELF_SECTION_KSYMTAB,
+	KMOD_ELF_SECTION_MODINFO,
+	KMOD_ELF_SECTION_STRTAB,
+	KMOD_ELF_SECTION_SYMTAB,
+	KMOD_ELF_SECTION_VERSIONS,
+	KMOD_ELF_SECTION_MAX,
+};
+
+static const char *const section_name_map[] = {
+	[KMOD_ELF_SECTION_KSYMTAB] = "__ksymtab_strings",
+	[KMOD_ELF_SECTION_MODINFO] = ".modinfo",
+	[KMOD_ELF_SECTION_STRTAB] = ".strtab",
+	[KMOD_ELF_SECTION_SYMTAB] = ".symtab",
+	[KMOD_ELF_SECTION_VERSIONS] = "__versions",
+};
+
 struct kmod_elf {
 	const uint8_t *memory;
 	uint64_t size;
 	bool x32;
 	bool msb;
-	struct kmod_elf_header {
+	struct {
 		struct {
 			uint64_t offset;
 			uint16_t count;
@@ -42,10 +58,13 @@ struct kmod_elf {
 			uint16_t section; /* index of the strings section */
 			uint64_t size;
 			uint64_t offset;
-			uint32_t nameoff; /* offset in strings itself */
 		} strings;
 		uint16_t machine;
 	} header;
+	struct {
+		uint64_t offset;
+		uint64_t size;
+	} sections[KMOD_ELF_SECTION_MAX];
 };
 
 //#undef ENABLE_ELFDBG
@@ -106,6 +125,21 @@ static int elf_identify(struct kmod_elf *elf, const void *memory, uint64_t size)
 	return 0;
 }
 
+static inline bool elf_range_valid(const struct kmod_elf *elf, uint64_t offset,
+				   uint64_t size)
+{
+	uint64_t min_size;
+
+	if (uadd64_overflow(offset, size, &min_size) || min_size > elf->size) {
+		ELFDBG(elf,
+		       "out of bounds: %" PRIu64 " + %" PRIu64 " > %" PRIu64
+		       " (ELF size)\n",
+		       offset, size, elf->size);
+		return false;
+	}
+	return true;
+}
+
 static inline uint64_t elf_get_uint(const struct kmod_elf *elf, uint64_t offset,
 				    uint16_t size)
 {
@@ -113,14 +147,6 @@ static inline uint64_t elf_get_uint(const struct kmod_elf *elf, uint64_t offset,
 	uint64_t ret = 0;
 
 	assert(size <= sizeof(uint64_t));
-	assert(offset + size <= elf->size);
-	if (offset + size > elf->size) {
-		ELFDBG(elf,
-		       "out of bounds: %" PRIu64 " + %" PRIu16 " = %" PRIu64 "> %" PRIu64
-		       " (ELF size)\n",
-		       offset, size, offset + size, elf->size);
-		return (uint64_t)-1;
-	}
 
 	p = elf->memory + offset;
 
@@ -149,14 +175,6 @@ static inline int elf_set_uint(const struct kmod_elf *elf, uint64_t offset, uint
 	       size, offset, value, changed);
 
 	assert(size <= sizeof(uint64_t));
-	assert(offset + size <= elf->size);
-	if (offset + size > elf->size) {
-		ELFDBG(elf,
-		       "out of bounds: %" PRIu64 " + %" PRIu64 " = %" PRIu64 "> %" PRIu64
-		       " (ELF size)\n",
-		       offset, size, offset + size, elf->size);
-		return -1;
-	}
 
 	p = changed + offset;
 	if (elf->msb) {
@@ -176,41 +194,37 @@ static inline int elf_set_uint(const struct kmod_elf *elf, uint64_t offset, uint
 
 static inline const void *elf_get_mem(const struct kmod_elf *elf, uint64_t offset)
 {
-	assert(offset < elf->size);
-	if (offset >= elf->size) {
-		ELFDBG(elf, "out-of-bounds: %" PRIu64 " >= %" PRIu64 " (ELF size)\n",
-		       offset, elf->size);
-		return NULL;
-	}
 	return elf->memory + offset;
 }
 
-static inline const void *elf_get_section_header(const struct kmod_elf *elf, uint16_t idx)
+/*
+ * Returns offset to section header for section with given index or 0 on error
+ * (offset 0 cannot be a valid section offset because ELF header is located there).
+ */
+static inline uint64_t elf_get_section_header_offset(const struct kmod_elf *elf,
+						     uint16_t idx)
 {
 	assert(idx != SHN_UNDEF);
 	assert(idx < elf->header.section.count);
 	if (idx == SHN_UNDEF || idx >= elf->header.section.count) {
 		ELFDBG(elf, "invalid section number: %" PRIu16 ", last=%" PRIu16 "\n",
 		       idx, elf->header.section.count);
-		return NULL;
+		return 0;
 	}
-	return elf_get_mem(elf, elf->header.section.offset +
-					(uint64_t)(idx * elf->header.section.entry_size));
+	return elf->header.section.offset +
+	       (uint64_t)(idx * elf->header.section.entry_size);
 }
 
 static inline int elf_get_section_info(const struct kmod_elf *elf, uint16_t idx,
 				       uint64_t *offset, uint64_t *size,
-				       uint32_t *nameoff)
+				       const char **name)
 {
-	const uint8_t *p = elf_get_section_header(elf, idx);
-	uint64_t min_size, off = p - elf->memory;
+	uint64_t nameoff;
+	uint64_t off = elf_get_section_header_offset(elf, idx);
 
-	if (p == NULL) {
+	if (off == 0) {
 		ELFDBG(elf, "no section at %" PRIu16 "\n", idx);
-		*offset = 0;
-		*size = 0;
-		*nameoff = 0;
-		return -EINVAL;
+		goto fail;
 	}
 
 #define READV(field) \
@@ -218,64 +232,98 @@ static inline int elf_get_section_info(const struct kmod_elf *elf, uint16_t idx,
 
 	if (elf->x32) {
 		Elf32_Shdr *hdr;
+
+		if (!elf_range_valid(elf, off, sizeof(*hdr)))
+			goto fail;
 		*size = READV(sh_size);
 		*offset = READV(sh_offset);
-		*nameoff = READV(sh_name);
+		nameoff = READV(sh_name);
 	} else {
 		Elf64_Shdr *hdr;
+
+		if (!elf_range_valid(elf, off, sizeof(*hdr)))
+			goto fail;
 		*size = READV(sh_size);
 		*offset = READV(sh_offset);
-		*nameoff = READV(sh_name);
+		nameoff = READV(sh_name);
 	}
 #undef READV
 
-	if (uadd64_overflow(*offset, *size, &min_size) || min_size > elf->size) {
-		ELFDBG(elf, "out-of-bounds: %" PRIu64 " >= %" PRIu64 " (ELF size)\n",
-		       min_size, elf->size);
-		return -EINVAL;
-	}
+	if (!elf_range_valid(elf, *offset, *size))
+		goto fail;
+
+	if (nameoff >= elf->header.strings.size)
+		goto fail;
+	*name = elf_get_mem(elf, elf->header.strings.offset + nameoff);
 
 	ELFDBG(elf,
-	       "section=%" PRIu16 " is: offset=%" PRIu64 " size=%" PRIu64
-	       " nameoff=%" PRIu32 "\n",
-	       idx, *offset, *size, *nameoff);
+	       "section=%" PRIu16 " is: offset=%" PRIu64 " size=%" PRIu64 " name=%s\n",
+	       idx, *offset, *size, *name);
 
 	return 0;
+fail:
+	*offset = 0;
+	*size = 0;
+	*name = NULL;
+	return -EINVAL;
 }
 
-static const char *elf_get_strings_section(const struct kmod_elf *elf, uint64_t *size)
+static void kmod_elf_save_sections(struct kmod_elf *elf)
 {
-	*size = elf->header.strings.size;
-	return elf_get_mem(elf, elf->header.strings.offset);
+	const uint16_t all_sec = (1 << KMOD_ELF_SECTION_MAX) - 1;
+	uint16_t found_sec = 0;
+	enum kmod_elf_section sec;
+
+	for (uint16_t i = 1; i < elf->header.section.count && found_sec != all_sec; i++) {
+		uint64_t off, size;
+		const char *n;
+		int err = elf_get_section_info(elf, i, &off, &size, &n);
+		if (err < 0)
+			continue;
+
+		for (sec = KMOD_ELF_SECTION_KSYMTAB; sec < KMOD_ELF_SECTION_MAX; sec++) {
+			if (found_sec & (1 << sec))
+				continue;
+
+			if (streq(section_name_map[sec], n)) {
+				elf->sections[sec].offset = off;
+				elf->sections[sec].size = size;
+				found_sec |= 1 << sec;
+				break;
+			}
+		}
+	}
+
+	for (sec = KMOD_ELF_SECTION_KSYMTAB; sec < KMOD_ELF_SECTION_MAX; sec++) {
+		if (found_sec & (1 << sec))
+			continue;
+
+		ELFDBG(elf, "section %s not found\n", section_name_map[sec]);
+		elf->sections[sec].offset = 0;
+		elf->sections[sec].size = 0;
+	}
 }
 
-struct kmod_elf *kmod_elf_new(const void *memory, off_t size)
+int kmod_elf_new(const void *memory, off_t size, struct kmod_elf **out_elf)
 {
 	struct kmod_elf *elf;
-	uint64_t min_size;
 	size_t shdrs_size, shdr_size;
 	int err;
+	const char *name;
 
 	assert_cc(sizeof(uint16_t) == sizeof(Elf32_Half));
 	assert_cc(sizeof(uint16_t) == sizeof(Elf64_Half));
 	assert_cc(sizeof(uint32_t) == sizeof(Elf32_Word));
 	assert_cc(sizeof(uint32_t) == sizeof(Elf64_Word));
 
-	if (!memory) {
-		errno = -EINVAL;
-		return NULL;
-	}
-
 	elf = malloc(sizeof(struct kmod_elf));
-	if (elf == NULL) {
-		return NULL;
-	}
+	if (elf == NULL)
+		return -ENOMEM;
 
 	err = elf_identify(elf, memory, size);
 	if (err < 0) {
 		free(elf);
-		errno = -err;
-		return NULL;
+		return err;
 	}
 
 	elf->memory = memory;
@@ -291,12 +339,18 @@ struct kmod_elf *kmod_elf_new(const void *memory, off_t size)
 	elf->header.machine = READV(e_machine)
 	if (elf->x32) {
 		Elf32_Ehdr *hdr;
-		LOAD_HEADER;
+
 		shdr_size = sizeof(Elf32_Shdr);
+		if (!elf_range_valid(elf, 0, sizeof(*hdr)))
+			goto invalid;
+		LOAD_HEADER;
 	} else {
 		Elf64_Ehdr *hdr;
-		LOAD_HEADER;
+
 		shdr_size = sizeof(Elf64_Shdr);
+		if (!elf_range_valid(elf, 0, sizeof(*hdr)))
+			goto invalid;
+		LOAD_HEADER;
 	}
 #undef LOAD_HEADER
 #undef READV
@@ -313,32 +367,30 @@ struct kmod_elf *kmod_elf_new(const void *memory, off_t size)
 		goto invalid;
 	}
 	shdrs_size = shdr_size * elf->header.section.count;
-	if (uadd64_overflow(shdrs_size, elf->header.section.offset, &min_size) ||
-	    min_size > elf->size) {
-		ELFDBG(elf, "file is too short to hold sections\n");
+	if (!elf_range_valid(elf, elf->header.section.offset, shdrs_size))
 		goto invalid;
-	}
 
 	if (elf_get_section_info(elf, elf->header.strings.section,
 				 &elf->header.strings.offset, &elf->header.strings.size,
-				 &elf->header.strings.nameoff) < 0) {
+				 &name) < 0) {
 		ELFDBG(elf, "could not get strings section\n");
 		goto invalid;
 	} else {
-		uint64_t slen;
-		const char *s = elf_get_strings_section(elf, &slen);
+		uint64_t slen = elf->header.strings.size;
+		const char *s = elf_get_mem(elf, elf->header.strings.offset);
 		if (slen == 0 || s[slen - 1] != '\0') {
 			ELFDBG(elf, "strings section does not end with \\0\n");
 			goto invalid;
 		}
 	}
 
-	return elf;
+	kmod_elf_save_sections(elf);
+	*out_elf = elf;
+	return 0;
 
 invalid:
 	free(elf);
-	errno = EINVAL;
-	return NULL;
+	return -EINVAL;
 }
 
 void kmod_elf_unref(struct kmod_elf *elf)
@@ -351,85 +403,55 @@ const void *kmod_elf_get_memory(const struct kmod_elf *elf)
 	return elf->memory;
 }
 
-static int elf_find_section(const struct kmod_elf *elf, const char *section)
+/*
+ * Returns section index on success, negative value otherwise.
+ * On success, sec_off and sec_size are range checked and valid.
+ */
+int kmod_elf_get_section(const struct kmod_elf *elf, const char *section,
+			 uint64_t *sec_off, uint64_t *sec_size)
 {
-	uint64_t nameslen;
-	const char *names = elf_get_strings_section(elf, &nameslen);
 	uint16_t i;
+
+	*sec_off = 0;
+	*sec_size = 0;
 
 	for (i = 1; i < elf->header.section.count; i++) {
 		uint64_t off, size;
-		uint32_t nameoff;
 		const char *n;
-		int err = elf_get_section_info(elf, i, &off, &size, &nameoff);
+		int err = elf_get_section_info(elf, i, &off, &size, &n);
 		if (err < 0)
 			continue;
-		if (nameoff >= nameslen)
-			continue;
-		n = names + nameoff;
 		if (!streq(section, n))
 			continue;
 
+		*sec_off = off;
+		*sec_size = size;
 		return i;
 	}
 
 	return -ENODATA;
 }
 
-int kmod_elf_get_section(const struct kmod_elf *elf, const char *section,
-			 const void **buf, uint64_t *buf_size)
-{
-	uint64_t nameslen;
-	const char *names = elf_get_strings_section(elf, &nameslen);
-	uint16_t i;
-
-	*buf = NULL;
-	*buf_size = 0;
-
-	for (i = 1; i < elf->header.section.count; i++) {
-		uint64_t off, size;
-		uint32_t nameoff;
-		const char *n;
-		int err = elf_get_section_info(elf, i, &off, &size, &nameoff);
-		if (err < 0)
-			continue;
-		if (nameoff >= nameslen)
-			continue;
-		n = names + nameoff;
-		if (!streq(section, n))
-			continue;
-
-		*buf = elf_get_mem(elf, off);
-		*buf_size = size;
-		return 0;
-	}
-
-	return -ENODATA;
-}
-
 /* array will be allocated with strings in a single malloc, just free *array */
-int kmod_elf_get_strings(const struct kmod_elf *elf, const char *section, char ***array)
+int kmod_elf_get_modinfo_strings(const struct kmod_elf *elf, char ***array)
 {
 	size_t i, j, count;
 	size_t tmp_size, vec_size, total_size;
-	uint64_t size;
-	const void *buf;
+	uint64_t off, size;
 	const char *strings;
 	char *s, **a;
-	int err;
 
 	*array = NULL;
 
-	err = kmod_elf_get_section(elf, section, &buf, &size);
-	if (err < 0)
-		return err;
+	off = elf->sections[KMOD_ELF_SECTION_MODINFO].offset;
+	size = elf->sections[KMOD_ELF_SECTION_MODINFO].size;
+	if (off == 0)
+		return -ENODATA;
 
-	strings = buf;
-	if (strings == NULL || size == 0)
-		return 0;
+	strings = elf_get_mem(elf, off);
 
 	/* skip zero padding */
-	while (strings[0] == '\0' && size > 1) {
+	while (size > 1 && strings[0] == '\0') {
 		strings++;
 		size--;
 	}
@@ -462,7 +484,7 @@ int kmod_elf_get_strings(const struct kmod_elf *elf, const char *section, char *
 
 	*array = a = malloc(total_size);
 	if (*array == NULL)
-		return -errno;
+		return -ENOMEM;
 
 	s = (char *)(a + count + 1);
 	memcpy(s, strings, size);
@@ -478,7 +500,7 @@ int kmod_elf_get_strings(const struct kmod_elf *elf, const char *section, char *
 			continue;
 		}
 
-		while (strings[i] == '\0' && i < size)
+		while (i < size && s[i] == '\0')
 			i++;
 
 		a[j] = &s[i];
@@ -488,71 +510,74 @@ int kmod_elf_get_strings(const struct kmod_elf *elf, const char *section, char *
 	return count;
 }
 
+static inline void elf_get_modversion_lengths(const struct kmod_elf *elf, size_t *verlen,
+					      size_t *crclen, size_t *namlen)
+{
+	assert_cc(sizeof(struct kmod_modversion64) == sizeof(struct kmod_modversion32));
+
+	if (elf->x32) {
+		struct kmod_modversion32 *mv;
+
+		*verlen = sizeof(*mv);
+		*crclen = sizeof(mv->crc);
+		*namlen = sizeof(mv->name);
+	} else {
+		struct kmod_modversion64 *mv;
+
+		*verlen = sizeof(*mv);
+		*crclen = sizeof(mv->crc);
+		*namlen = sizeof(mv->name);
+	}
+}
+
 /* array will be allocated with strings in a single malloc, just free *array */
 int kmod_elf_get_modversions(const struct kmod_elf *elf, struct kmod_modversion **array)
 {
-	size_t off, offcrc, slen;
-	uint64_t size;
+	size_t i, count, crclen, namlen, verlen;
+	uint64_t off, sec_off, size;
 	struct kmod_modversion *a;
-	const void *buf;
-	char *itr;
-	int i, count, err;
-#define MODVERSION_SEC_SIZE (sizeof(struct kmod_modversion64))
 
-	assert_cc(sizeof(struct kmod_modversion64) == sizeof(struct kmod_modversion32));
-
-	if (elf->x32)
-		offcrc = sizeof(uint32_t);
-	else
-		offcrc = sizeof(uint64_t);
+	elf_get_modversion_lengths(elf, &verlen, &crclen, &namlen);
 
 	*array = NULL;
 
-	err = kmod_elf_get_section(elf, "__versions", &buf, &size);
-	if (err < 0)
-		return err;
+	sec_off = elf->sections[KMOD_ELF_SECTION_VERSIONS].offset;
+	size = elf->sections[KMOD_ELF_SECTION_VERSIONS].size;
+	if (sec_off == 0)
+		return -ENODATA;
 
-	if (buf == NULL || size == 0)
+	if (size == 0)
 		return 0;
 
-	if (size % MODVERSION_SEC_SIZE != 0)
+	if (size % verlen != 0)
 		return -EINVAL;
 
-	count = size / MODVERSION_SEC_SIZE;
-
-	off = (const uint8_t *)buf - elf->memory;
-	slen = 0;
-
-	for (i = 0; i < count; i++, off += MODVERSION_SEC_SIZE) {
-		const char *symbol = elf_get_mem(elf, off + offcrc);
-
-		if (symbol[0] == '.')
-			symbol++;
-
-		slen += strlen(symbol) + 1;
+	count = size / verlen;
+	if (count > INT_MAX) {
+		ELFDBG(elf, "too many modversions: %zu\n", count);
+		return -EINVAL;
 	}
 
-	*array = a = malloc(sizeof(struct kmod_modversion) * count + slen);
+	*array = a = malloc(sizeof(struct kmod_modversion) * count);
 	if (*array == NULL)
-		return -errno;
+		return -ENOMEM;
 
-	itr = (char *)(a + count);
-	off = (const uint8_t *)buf - elf->memory;
+	for (i = 0, off = sec_off; i < count; i++, off += verlen) {
+		uint64_t crc = elf_get_uint(elf, off, crclen);
+		const char *symbol = elf_get_mem(elf, off + crclen);
+		size_t nlen = strnlen(symbol, namlen);
 
-	for (i = 0; i < count; i++, off += MODVERSION_SEC_SIZE) {
-		uint64_t crc = elf_get_uint(elf, off, offcrc);
-		const char *symbol = elf_get_mem(elf, off + offcrc);
-		size_t symbollen;
+		if (nlen == namlen) {
+			ELFDBG(elf, "symbol name at index %zu too long\n", i);
+			return -EINVAL;
+		}
 
 		if (symbol[0] == '.')
 			symbol++;
 
 		a[i].crc = crc;
 		a[i].bind = KMOD_SYMBOL_UNDEF;
-		a[i].symbol = itr;
-		symbollen = strlen(symbol) + 1;
-		memcpy(itr, symbol, symbollen);
-		itr += symbollen;
+		a[i].symbol = symbol;
 	}
 
 	return count;
@@ -562,14 +587,14 @@ static int elf_strip_versions_section(const struct kmod_elf *elf, uint8_t *chang
 {
 	uint64_t off, size;
 	const void *buf;
-	int idx = elf_find_section(elf, "__versions");
+	/* the off and size values are not used, supply them as dummies */
+	int idx = kmod_elf_get_section(elf, "__versions", &off, &size);
 	uint64_t val;
 
 	if (idx < 0)
 		return idx == -ENODATA ? 0 : idx;
 
-	buf = elf_get_section_header(elf, idx);
-	off = (const uint8_t *)buf - elf->memory;
+	off = elf_get_section_header_offset(elf, idx);
 
 	if (elf->x32) {
 		off += offsetof(Elf32_Shdr, sh_flags);
@@ -587,20 +612,17 @@ static int elf_strip_versions_section(const struct kmod_elf *elf, uint8_t *chang
 
 static int elf_strip_vermagic(const struct kmod_elf *elf, uint8_t *changed)
 {
-	uint64_t i, size;
-	const void *buf;
+	uint64_t i, sec_off, size;
 	const char *strings;
-	int err;
 
-	err = kmod_elf_get_section(elf, ".modinfo", &buf, &size);
-	if (err < 0)
-		return err == -ENODATA ? 0 : err;
-	strings = buf;
-	if (strings == NULL || size == 0)
+	sec_off = elf->sections[KMOD_ELF_SECTION_MODINFO].offset;
+	size = elf->sections[KMOD_ELF_SECTION_MODINFO].size;
+	if (sec_off == 0)
 		return 0;
+	strings = elf_get_mem(elf, sec_off);
 
 	/* skip zero padding */
-	while (strings[0] == '\0' && size > 1) {
+	while (size > 1 && strings[0] == '\0') {
 		strings++;
 		size--;
 	}
@@ -617,17 +639,16 @@ static int elf_strip_vermagic(const struct kmod_elf *elf, uint8_t *changed)
 			continue;
 
 		s = strings + i;
-		len = sizeof("vermagic=") - 1;
-		if (i + len >= size)
+		if (i + strlen("vermagic=") >= size)
 			continue;
-		if (strncmp(s, "vermagic=", len) != 0) {
+		if (!strstartswith(s, "vermagic=")) {
 			i += strlen(s);
 			continue;
 		}
 		off = (const uint8_t *)s - elf->memory;
 
 		len = strlen(s);
-		ELFDBG(elf, "clear .modinfo vermagic \"%s\" (%zd bytes)\n", s, len);
+		ELFDBG(elf, "clear .modinfo vermagic \"%s\" (%zu bytes)\n", s, len);
 		memset(changed + off, '\0', len);
 		return 0;
 	}
@@ -636,7 +657,7 @@ static int elf_strip_vermagic(const struct kmod_elf *elf, uint8_t *changed)
 	return -ENODATA;
 }
 
-const void *kmod_elf_strip(const struct kmod_elf *elf, unsigned int flags)
+int kmod_elf_strip(const struct kmod_elf *elf, unsigned int flags, const void **stripped)
 {
 	uint8_t *changed;
 	int err = 0;
@@ -645,59 +666,58 @@ const void *kmod_elf_strip(const struct kmod_elf *elf, unsigned int flags)
 
 	changed = memdup(elf->memory, elf->size);
 	if (changed == NULL)
-		return NULL;
+		return -ENOMEM;
 
 	ELFDBG(elf, "copied memory to allow writing.\n");
 
 	if (flags & KMOD_INSERT_FORCE_MODVERSION) {
 		err = elf_strip_versions_section(elf, changed);
-		if (err < 0) {
-			errno = -err;
+		if (err < 0)
 			goto fail;
-		}
 	}
 
 	if (flags & KMOD_INSERT_FORCE_VERMAGIC) {
 		err = elf_strip_vermagic(elf, changed);
-		if (err < 0) {
-			errno = -err;
+		if (err < 0)
 			goto fail;
-		}
 	}
 
-	return changed;
+	*stripped = changed;
+	return 0;
 fail:
 	free(changed);
-	return NULL;
+	return err;
 }
 
 static int kmod_elf_get_symbols_symtab(const struct kmod_elf *elf,
 				       struct kmod_modversion **array)
 {
-	uint64_t i, last, size;
-	const void *buf;
+	uint64_t i, last, off, size;
 	const char *strings;
-	char *itr;
 	struct kmod_modversion *a;
-	int count, err;
+	size_t count, total_size;
 
 	*array = NULL;
 
-	err = kmod_elf_get_section(elf, "__ksymtab_strings", &buf, &size);
-	if (err < 0)
-		return err;
-	strings = buf;
-	if (strings == NULL || size == 0)
-		return 0;
+	off = elf->sections[KMOD_ELF_SECTION_KSYMTAB].offset;
+	size = elf->sections[KMOD_ELF_SECTION_KSYMTAB].size;
+	if (off == 0)
+		return -ENODATA;
+	strings = elf_get_mem(elf, off);
 
 	/* skip zero padding */
-	while (strings[0] == '\0' && size > 1) {
+	while (size > 1 && strings[0] == '\0') {
 		strings++;
 		size--;
 	}
 	if (size <= 1)
 		return 0;
 
+	if (strings[size - 1] != '\0') {
+		ELFDBG(elf, "section __ksymtab_strings does not end with \\0 byte");
+		return -EINVAL;
+	}
+
 	last = 0;
 	for (i = 0, count = 0; i < size; i++) {
 		if (strings[i] == '\0') {
@@ -709,40 +729,34 @@ static int kmod_elf_get_symbols_symtab(const struct kmod_elf *elf,
 			last = i + 1;
 		}
 	}
-	if (strings[i - 1] != '\0')
-		count++;
 
-	*array = a = malloc(size + 1 + sizeof(struct kmod_modversion) * count);
+	if (count > INT_MAX) {
+		ELFDBG(elf, "too many symbols: %zu\n", count);
+		return -EINVAL;
+	}
+
+	/* sizeof(struct kmod_modversion) * count */
+	if (umulsz_overflow(sizeof(struct kmod_modversion), count, &total_size)) {
+		return -ENOMEM;
+	}
+
+	*array = a = malloc(total_size);
 	if (*array == NULL)
-		return -errno;
+		return -ENOMEM;
 
-	itr = (char *)(a + count);
 	last = 0;
 	for (i = 0, count = 0; i < size; i++) {
 		if (strings[i] == '\0') {
-			size_t slen = i - last;
 			if (last == i) {
 				last = i + 1;
 				continue;
 			}
 			a[count].crc = 0;
 			a[count].bind = KMOD_SYMBOL_GLOBAL;
-			a[count].symbol = itr;
-			memcpy(itr, strings + last, slen);
-			itr[slen] = '\0';
-			itr += slen + 1;
+			a[count].symbol = strings + last;
 			count++;
 			last = i + 1;
 		}
-	}
-	if (strings[i - 1] != '\0') {
-		size_t slen = i - last;
-		a[count].crc = 0;
-		a[count].bind = KMOD_SYMBOL_GLOBAL;
-		a[count].symbol = itr;
-		memcpy(itr, strings + last, slen);
-		itr[slen] = '\0';
-		count++;
 	}
 
 	return count;
@@ -767,12 +781,12 @@ static uint64_t kmod_elf_resolve_crc(const struct kmod_elf *elf, uint64_t crc,
 {
 	int err;
 	uint64_t off, size;
-	uint32_t nameoff;
+	const char *name;
 
 	if (shndx == SHN_ABS || shndx == SHN_UNDEF)
 		return crc;
 
-	err = elf_get_section_info(elf, shndx, &off, &size, &nameoff);
+	err = elf_get_section_info(elf, shndx, &off, &size, &name);
 	if (err < 0) {
 		ELFDBG(elf, "Could not find section index %" PRIu16 " for crc", shndx);
 		return (uint64_t)-1;
@@ -795,21 +809,20 @@ int kmod_elf_get_symbols(const struct kmod_elf *elf, struct kmod_modversion **ar
 {
 	static const char crc_str[] = "__crc_";
 	static const size_t crc_strlen = sizeof(crc_str) - 1;
-	uint64_t strtablen, symtablen, str_off, sym_off;
-	const void *strtab, *symtab;
+	uint64_t strtablen, symtablen, str_sec_off, sym_sec_off, str_off, sym_off;
 	struct kmod_modversion *a;
-	char *itr;
-	size_t slen, symlen;
-	int i, count, symcount, err;
+	size_t i, count, symcount, symlen;
 
-	err = kmod_elf_get_section(elf, ".strtab", &strtab, &strtablen);
-	if (err < 0) {
+	str_sec_off = elf->sections[KMOD_ELF_SECTION_STRTAB].offset;
+	strtablen = elf->sections[KMOD_ELF_SECTION_STRTAB].size;
+	if (str_sec_off == 0) {
 		ELFDBG(elf, "no .strtab found.\n");
 		goto fallback;
 	}
 
-	err = kmod_elf_get_section(elf, ".symtab", &symtab, &symtablen);
-	if (err < 0) {
+	sym_sec_off = elf->sections[KMOD_ELF_SECTION_SYMTAB].offset;
+	symtablen = elf->sections[KMOD_ELF_SECTION_SYMTAB].size;
+	if (sym_sec_off == 0) {
 		ELFDBG(elf, "no .symtab found.\n");
 		goto fallback;
 	}
@@ -822,16 +835,15 @@ int kmod_elf_get_symbols(const struct kmod_elf *elf, struct kmod_modversion **ar
 	if (symtablen % symlen != 0) {
 		ELFDBG(elf,
 		       "unexpected .symtab of length %" PRIu64
-		       ", not multiple of %" PRIu64 " as expected.\n",
+		       ", not multiple of %zu as expected.\n",
 		       symtablen, symlen);
 		goto fallback;
 	}
 
 	symcount = symtablen / symlen;
 	count = 0;
-	slen = 0;
-	str_off = (const uint8_t *)strtab - elf->memory;
-	sym_off = (const uint8_t *)symtab - elf->memory + symlen;
+	str_off = str_sec_off;
+	sym_off = sym_sec_off + symlen;
 	for (i = 1; i < symcount; i++, sym_off += symlen) {
 		const char *name;
 		uint32_t name_off;
@@ -840,16 +852,18 @@ int kmod_elf_get_symbols(const struct kmod_elf *elf, struct kmod_modversion **ar
 	elf_get_uint(elf, sym_off + offsetof(typeof(*s), field), sizeof(s->field))
 		if (elf->x32) {
 			Elf32_Sym *s;
+
 			name_off = READV(st_name);
 		} else {
 			Elf64_Sym *s;
+
 			name_off = READV(st_name);
 		}
 #undef READV
 		if (name_off >= strtablen) {
 			ELFDBG(elf,
 			       ".strtab is %" PRIu64
-			       " bytes, but .symtab entry %d wants to access offset %" PRIu32
+			       " bytes, but .symtab entry %zu wants to access offset %" PRIu32
 			       ".\n",
 			       strtablen, i, name_off);
 			goto fallback;
@@ -857,23 +871,21 @@ int kmod_elf_get_symbols(const struct kmod_elf *elf, struct kmod_modversion **ar
 
 		name = elf_get_mem(elf, str_off + name_off);
 
-		if (strncmp(name, crc_str, crc_strlen) != 0)
+		if (!strstartswith(name, crc_str))
 			continue;
-		slen += strlen(name + crc_strlen) + 1;
 		count++;
 	}
 
 	if (count == 0)
 		goto fallback;
 
-	*array = a = malloc(sizeof(struct kmod_modversion) * count + slen);
+	*array = a = malloc(sizeof(struct kmod_modversion) * count);
 	if (*array == NULL)
-		return -errno;
+		return -ENOMEM;
 
-	itr = (char *)(a + count);
 	count = 0;
-	str_off = (const uint8_t *)strtab - elf->memory;
-	sym_off = (const uint8_t *)symtab - elf->memory + symlen;
+	str_off = str_sec_off;
+	sym_off = sym_sec_off + symlen;
 	for (i = 1; i < symcount; i++, sym_off += symlen) {
 		const char *name;
 		uint32_t name_off;
@@ -885,12 +897,14 @@ int kmod_elf_get_symbols(const struct kmod_elf *elf, struct kmod_modversion **ar
 	elf_get_uint(elf, sym_off + offsetof(typeof(*s), field), sizeof(s->field))
 		if (elf->x32) {
 			Elf32_Sym *s;
+
 			name_off = READV(st_name);
 			crc = READV(st_value);
 			info = READV(st_info);
 			shndx = READV(st_shndx);
 		} else {
 			Elf64_Sym *s;
+
 			name_off = READV(st_name);
 			crc = READV(st_value);
 			info = READV(st_info);
@@ -898,7 +912,7 @@ int kmod_elf_get_symbols(const struct kmod_elf *elf, struct kmod_modversion **ar
 		}
 #undef READV
 		name = elf_get_mem(elf, str_off + name_off);
-		if (strncmp(name, crc_str, crc_strlen) != 0)
+		if (!strstartswith(name, crc_str))
 			continue;
 		name += crc_strlen;
 
@@ -909,11 +923,7 @@ int kmod_elf_get_symbols(const struct kmod_elf *elf, struct kmod_modversion **ar
 
 		a[count].crc = kmod_elf_resolve_crc(elf, crc, shndx);
 		a[count].bind = kmod_symbol_bind_from_elf(bind);
-		a[count].symbol = itr;
-		slen = strlen(name);
-		memcpy(itr, name, slen);
-		itr[slen] = '\0';
-		itr += slen + 1;
+		a[count].symbol = name;
 		count++;
 	}
 	return count;
@@ -923,27 +933,20 @@ fallback:
 	return kmod_elf_get_symbols_symtab(elf, array);
 }
 
-static int kmod_elf_crc_find(const struct kmod_elf *elf, const void *versions,
+static int kmod_elf_crc_find(const struct kmod_elf *elf, uint64_t off,
 			     uint64_t versionslen, const char *name, uint64_t *crc)
 {
-	size_t verlen, crclen, off;
+	size_t namlen, verlen, crclen;
 	uint64_t i;
 
-	if (elf->x32) {
-		struct kmod_modversion32 *mv;
-		verlen = sizeof(*mv);
-		crclen = sizeof(mv->crc);
-	} else {
-		struct kmod_modversion64 *mv;
-		verlen = sizeof(*mv);
-		crclen = sizeof(mv->crc);
-	}
+	elf_get_modversion_lengths(elf, &verlen, &crclen, &namlen);
 
-	off = (const uint8_t *)versions - elf->memory;
 	for (i = 0; i < versionslen; i += verlen) {
 		const char *symbol = elf_get_mem(elf, off + i + crclen);
-		if (!streq(name, symbol))
+		if (strnlen(symbol, namlen) == namlen || !streq(name, symbol)) {
+			ELFDBG(elf, "symbol name at index %" PRIu64 " too long\n", i);
 			continue;
+		}
 		*crc = elf_get_uint(elf, off + i, crclen);
 		return i / verlen;
 	}
@@ -963,49 +966,42 @@ int kmod_elf_get_dependency_symbols(const struct kmod_elf *elf,
 				    struct kmod_modversion **array)
 {
 	uint64_t versionslen, strtablen, symtablen, str_off, sym_off, ver_off;
-	const void *versions, *strtab, *symtab;
+	uint64_t str_sec_off, sym_sec_off;
 	struct kmod_modversion *a;
-	char *itr;
-	size_t slen, verlen, symlen, crclen;
-	int i, count, symcount, vercount, err;
+	size_t i, count, namlen, vercount, verlen, symcount, symlen, crclen;
 	bool handle_register_symbols;
 	uint8_t *visited_versions;
 	uint64_t *symcrcs;
 
-	err = kmod_elf_get_section(elf, "__versions", &versions, &versionslen);
-	if (err < 0) {
-		versions = NULL;
+	ver_off = elf->sections[KMOD_ELF_SECTION_VERSIONS].offset;
+	versionslen = elf->sections[KMOD_ELF_SECTION_VERSIONS].size;
+	if (ver_off == 0) {
 		versionslen = 0;
 		verlen = 0;
 		crclen = 0;
+		namlen = 0;
 	} else {
-		if (elf->x32) {
-			struct kmod_modversion32 *mv;
-			verlen = sizeof(*mv);
-			crclen = sizeof(mv->crc);
-		} else {
-			struct kmod_modversion64 *mv;
-			verlen = sizeof(*mv);
-			crclen = sizeof(mv->crc);
-		}
+		elf_get_modversion_lengths(elf, &verlen, &crclen, &namlen);
 		if (versionslen % verlen != 0) {
 			ELFDBG(elf,
 			       "unexpected __versions of length %" PRIu64
-			       ", not multiple of %zd as expected.\n",
+			       ", not multiple of %zu as expected.\n",
 			       versionslen, verlen);
-			versions = NULL;
+			ver_off = 0;
 			versionslen = 0;
 		}
 	}
 
-	err = kmod_elf_get_section(elf, ".strtab", &strtab, &strtablen);
-	if (err < 0) {
+	str_sec_off = elf->sections[KMOD_ELF_SECTION_STRTAB].offset;
+	strtablen = elf->sections[KMOD_ELF_SECTION_STRTAB].size;
+	if (str_sec_off == 0) {
 		ELFDBG(elf, "no .strtab found.\n");
 		return -EINVAL;
 	}
 
-	err = kmod_elf_get_section(elf, ".symtab", &symtab, &symtablen);
-	if (err < 0) {
+	sym_sec_off = elf->sections[KMOD_ELF_SECTION_SYMTAB].offset;
+	symtablen = elf->sections[KMOD_ELF_SECTION_SYMTAB].size;
+	if (sym_sec_off == 0) {
 		ELFDBG(elf, "no .symtab found.\n");
 		return -EINVAL;
 	}
@@ -1018,7 +1014,7 @@ int kmod_elf_get_dependency_symbols(const struct kmod_elf *elf,
 	if (symtablen % symlen != 0) {
 		ELFDBG(elf,
 		       "unexpected .symtab of length %" PRIu64
-		       ", not multiple of %" PRIu64 " as expected.\n",
+		       ", not multiple of %zu as expected.\n",
 		       symtablen, symlen);
 		return -EINVAL;
 	}
@@ -1038,9 +1034,8 @@ int kmod_elf_get_dependency_symbols(const struct kmod_elf *elf,
 
 	symcount = symtablen / symlen;
 	count = 0;
-	slen = 0;
-	str_off = (const uint8_t *)strtab - elf->memory;
-	sym_off = (const uint8_t *)symtab - elf->memory + symlen;
+	str_off = str_sec_off;
+	sym_off = sym_sec_off + symlen;
 
 	symcrcs = calloc(symcount, sizeof(uint64_t));
 	if (symcrcs == NULL) {
@@ -1060,11 +1055,13 @@ int kmod_elf_get_dependency_symbols(const struct kmod_elf *elf,
 	elf_get_uint(elf, sym_off + offsetof(typeof(*s), field), sizeof(s->field))
 		if (elf->x32) {
 			Elf32_Sym *s;
+
 			name_off = READV(st_name);
 			secidx = READV(st_shndx);
 			info = READV(st_info);
 		} else {
 			Elf64_Sym *s;
+
 			name_off = READV(st_name);
 			secidx = READV(st_shndx);
 			info = READV(st_info);
@@ -1092,7 +1089,7 @@ int kmod_elf_get_dependency_symbols(const struct kmod_elf *elf,
 		if (name_off >= strtablen) {
 			ELFDBG(elf,
 			       ".strtab is %" PRIu64
-			       " bytes, but .symtab entry %d wants to access offset %" PRIu32
+			       " bytes, but .symtab entry %zu wants to access offset %" PRIu32
 			       ".\n",
 			       strtablen, i, name_off);
 			free(visited_versions);
@@ -1102,14 +1099,13 @@ int kmod_elf_get_dependency_symbols(const struct kmod_elf *elf,
 
 		name = elf_get_mem(elf, str_off + name_off);
 		if (name[0] == '\0') {
-			ELFDBG(elf, "empty symbol name at index %d\n", i);
+			ELFDBG(elf, "empty symbol name at index %zu\n", i);
 			continue;
 		}
 
-		slen += strlen(name) + 1;
 		count++;
 
-		idx = kmod_elf_crc_find(elf, versions, versionslen, name, &crc);
+		idx = kmod_elf_crc_find(elf, ver_off, versionslen, name, &crc);
 		if (idx >= 0 && visited_versions != NULL)
 			visited_versions[idx] = 1;
 		symcrcs[i] = crc;
@@ -1117,16 +1113,33 @@ int kmod_elf_get_dependency_symbols(const struct kmod_elf *elf,
 
 	if (visited_versions != NULL) {
 		/* module_layout/struct_module are not visited, but needed */
-		ver_off = (const uint8_t *)versions - elf->memory;
 		for (i = 0; i < vercount; i++) {
 			if (visited_versions[i] == 0) {
 				const char *name;
+				size_t nlen;
+
 				name = elf_get_mem(elf, ver_off + i * verlen + crclen);
-				slen += strlen(name) + 1;
+				nlen = strnlen(name, namlen);
+
+				if (nlen == namlen) {
+					ELFDBG(elf, "symbol name at index %zu too long\n",
+					       i);
+					free(visited_versions);
+					free(symcrcs);
+					return -EINVAL;
+				}
 
 				count++;
 			}
 		}
+	}
+
+	if (count > INT_MAX) {
+		ELFDBG(elf, "too many symbols: %zu\n", count);
+		free(visited_versions);
+		free(symcrcs);
+		*array = NULL;
+		return -EINVAL;
 	}
 
 	if (count == 0) {
@@ -1136,17 +1149,16 @@ int kmod_elf_get_dependency_symbols(const struct kmod_elf *elf,
 		return 0;
 	}
 
-	*array = a = malloc(sizeof(struct kmod_modversion) * count + slen);
+	*array = a = malloc(sizeof(struct kmod_modversion) * count);
 	if (*array == NULL) {
 		free(visited_versions);
 		free(symcrcs);
-		return -errno;
+		return -ENOMEM;
 	}
 
-	itr = (char *)(a + count);
 	count = 0;
-	str_off = (const uint8_t *)strtab - elf->memory;
-	sym_off = (const uint8_t *)symtab - elf->memory + symlen;
+	str_off = str_sec_off;
+	sym_off = sym_sec_off + symlen;
 	for (i = 1; i < symcount; i++, sym_off += symlen) {
 		const char *name;
 		uint64_t crc;
@@ -1158,11 +1170,13 @@ int kmod_elf_get_dependency_symbols(const struct kmod_elf *elf,
 	elf_get_uint(elf, sym_off + offsetof(typeof(*s), field), sizeof(s->field))
 		if (elf->x32) {
 			Elf32_Sym *s;
+
 			name_off = READV(st_name);
 			secidx = READV(st_shndx);
 			info = READV(st_info);
 		} else {
 			Elf64_Sym *s;
+
 			name_off = READV(st_name);
 			secidx = READV(st_shndx);
 			info = READV(st_info);
@@ -1189,7 +1203,7 @@ int kmod_elf_get_dependency_symbols(const struct kmod_elf *elf,
 
 		name = elf_get_mem(elf, str_off + name_off);
 		if (name[0] == '\0') {
-			ELFDBG(elf, "empty symbol name at index %d\n", i);
+			ELFDBG(elf, "empty symbol name at index %zu\n", i);
 			continue;
 		}
 
@@ -1202,15 +1216,11 @@ int kmod_elf_get_dependency_symbols(const struct kmod_elf *elf,
 		else
 			bind = KMOD_SYMBOL_UNDEF;
 
-		slen = strlen(name);
 		crc = symcrcs[i];
 
 		a[count].crc = crc;
 		a[count].bind = bind;
-		a[count].symbol = itr;
-		memcpy(itr, name, slen);
-		itr[slen] = '\0';
-		itr += slen + 1;
+		a[count].symbol = name;
 
 		count++;
 	}
@@ -1221,7 +1231,6 @@ int kmod_elf_get_dependency_symbols(const struct kmod_elf *elf,
 		return count;
 
 	/* add unvisited (module_layout/struct_module) */
-	ver_off = (const uint8_t *)versions - elf->memory;
 	for (i = 0; i < vercount; i++) {
 		const char *name;
 		uint64_t crc;
@@ -1230,15 +1239,11 @@ int kmod_elf_get_dependency_symbols(const struct kmod_elf *elf,
 			continue;
 
 		name = elf_get_mem(elf, ver_off + i * verlen + crclen);
-		slen = strlen(name);
 		crc = elf_get_uint(elf, ver_off + i * verlen, crclen);
 
 		a[count].crc = crc;
 		a[count].bind = KMOD_SYMBOL_UNDEF;
-		a[count].symbol = itr;
-		memcpy(itr, name, slen);
-		itr[slen] = '\0';
-		itr += slen + 1;
+		a[count].symbol = name;
 
 		count++;
 	}

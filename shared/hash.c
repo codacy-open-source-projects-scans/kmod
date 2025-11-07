@@ -34,14 +34,14 @@ struct hash *hash_new(unsigned int n_buckets, void (*free_value)(void *value))
 {
 	struct hash *hash;
 
-	n_buckets = ALIGN_POWER2(n_buckets);
+	n_buckets = align_power2(n_buckets);
 	hash = calloc(1, sizeof(struct hash) + n_buckets * sizeof(struct hash_bucket));
 	if (hash == NULL)
 		return NULL;
 	hash->n_buckets = n_buckets;
 	hash->free_value = free_value;
 	hash->step = n_buckets / 32;
-	if (hash->step == 0)
+	if (hash->step < 4)
 		hash->step = 4;
 	else if (hash->step > 64)
 		hash->step = 64;
@@ -140,7 +140,7 @@ int hash_add(struct hash *hash, const char *key, const void *value)
 		size_t size = new_total * sizeof(struct hash_entry);
 		struct hash_entry *tmp = realloc(bucket->entries, size);
 		if (tmp == NULL)
-			return -errno;
+			return -ENOMEM;
 		bucket->entries = tmp;
 		bucket->total = new_total;
 	}
@@ -183,7 +183,7 @@ int hash_add_unique(struct hash *hash, const char *key, const void *value)
 		size_t size = new_total * sizeof(struct hash_entry);
 		struct hash_entry *tmp = realloc(bucket->entries, size);
 		if (tmp == NULL)
-			return -errno;
+			return -ENOMEM;
 		bucket->entries = tmp;
 		bucket->total = new_total;
 	}
@@ -249,6 +249,9 @@ int hash_del(struct hash *hash, const char *key)
 		.value = NULL,
 	};
 
+	if (bucket->entries == NULL)
+		return -ENOENT;
+
 	entry = bsearch(&se, bucket->entries, bucket->used, sizeof(struct hash_entry),
 			hash_entry_cmp);
 	if (entry == NULL)
@@ -258,7 +261,7 @@ int hash_del(struct hash *hash, const char *key)
 		hash->free_value((void *)entry->value);
 
 	entry_end = bucket->entries + bucket->used;
-	memmove(entry, entry + 1, (entry_end - entry) * sizeof(struct hash_entry));
+	memmove(entry, entry + 1, (entry_end - entry - 1) * sizeof(struct hash_entry));
 
 	bucket->used--;
 	hash->count--;

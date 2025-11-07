@@ -33,7 +33,7 @@ static const struct static_nodes_format static_nodes_format_human;
 static const struct static_nodes_format static_nodes_format_tmpfiles;
 static const struct static_nodes_format static_nodes_format_devname;
 
-static const struct static_nodes_format *static_nodes_formats[] = {
+static const struct static_nodes_format *const static_nodes_formats[] = {
 	&static_nodes_format_human,
 	&static_nodes_format_tmpfiles,
 	&static_nodes_format_devname,
@@ -59,10 +59,10 @@ static int write_human(FILE *out, char modname[], char devname[], char type,
 		      "\t\tMajor: %u\n"
 		      "\t\tMinor: %u\n",
 		      modname, devname, (type == 'c') ? "character" : "block", maj, min);
-	if (ret >= 0)
-		return EXIT_SUCCESS;
-	else
+	if (ret < 0)
 		return EXIT_FAILURE;
+
+	return EXIT_SUCCESS;
 }
 
 static const struct static_nodes_format static_nodes_format_human = {
@@ -71,8 +71,8 @@ static const struct static_nodes_format static_nodes_format_human = {
 	.description = "(default) a human readable format. Do not parse.",
 };
 
-static int write_tmpfiles(FILE *out, char modname[], char devname[], char type,
-			  unsigned int maj, unsigned int min)
+static int write_tmpfiles(FILE *out, _maybe_unused_ char modname[], char devname[],
+			  char type, unsigned int maj, unsigned int min)
 {
 	const char *dir;
 	int ret;
@@ -104,10 +104,10 @@ static int write_devname(FILE *out, char modname[], char devname[], char type,
 	int ret;
 
 	ret = fprintf(out, "%s %s %c%u:%u\n", modname, devname, type, maj, min);
-	if (ret >= 0)
-		return EXIT_SUCCESS;
-	else
+	if (ret < 0)
 		return EXIT_FAILURE;
+
+	return EXIT_SUCCESS;
 }
 
 static const struct static_nodes_format static_nodes_format_devname = {
@@ -126,8 +126,8 @@ static void help(void)
 	       "kmod static-nodes outputs the static-node information of the currently running kernel.\n"
 	       "\n"
 	       "Options:\n"
-	       "\t-f, --format=FORMAT  choose format to use: see \"Formats\"\n"
-	       "\t-o, --output=FILE    write output to file\n"
+	       "\t-f, --format FORMAT  choose format to use: see \"Formats\"\n"
+	       "\t-o, --output FILE    write output to file\n"
 	       "\t-h, --help           show this help\n"
 	       "\n"
 	       "Formats:\n",
@@ -144,8 +144,8 @@ static void help(void)
 static int do_static_nodes(int argc, char *argv[])
 {
 	struct utsname kernel;
-	char modules[PATH_MAX], buf[4096];
-	const char *output = "/dev/stdout";
+	char modules[PATH_MAX], buf[PATH_MAX];
+	const char *output = NULL;
 	FILE *in = NULL, *out = NULL;
 	const struct static_nodes_format *format = &static_nodes_format_human;
 	int r, ret = EXIT_SUCCESS;
@@ -227,19 +227,24 @@ static int do_static_nodes(int argc, char *argv[])
 		goto finish;
 	}
 
-	r = mkdir_parents(output, 0755);
-	if (r < 0) {
-		fprintf(stderr, "Error: could not create parent directory for %s - %m.\n",
-			output);
-		ret = EXIT_FAILURE;
-		goto finish;
-	}
+	if (output == NULL) {
+		out = stdout;
+	} else {
+		r = mkdir_parents(output, 0755);
+		if (r < 0) {
+			fprintf(stderr,
+				"Error: could not create parent directory for %s - %s.\n",
+				output, strerror(-r));
+			ret = EXIT_FAILURE;
+			goto finish;
+		}
 
-	out = fopen(output, "we");
-	if (out == NULL) {
-		fprintf(stderr, "Error: could not create %s - %m\n", output);
-		ret = EXIT_FAILURE;
-		goto finish;
+		out = fopen(output, "we");
+		if (out == NULL) {
+			fprintf(stderr, "Error: could not create %s - %m\n", output);
+			ret = EXIT_FAILURE;
+			goto finish;
+		}
 	}
 
 	while (fgets(buf, sizeof(buf), in) != NULL) {
@@ -274,5 +279,5 @@ finish:
 const struct kmod_cmd kmod_cmd_static_nodes = {
 	.name = "static-nodes",
 	.cmd = do_static_nodes,
-	.help = "outputs the static-node information installed with the currently running kernel",
+	.help = "output the static-node information installed with the currently running kernel",
 };

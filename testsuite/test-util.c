@@ -17,28 +17,26 @@
 
 #include "testsuite.h"
 
-static int alias_1(const struct test *t)
+static int alias_1(void)
 {
-	static const char *const input[] = {
+	static const char *const aliases[] = {
 		// clang-format off
 		"test1234",
 		"test[abcfoobar]2211",
 		"bar[aaa][bbbb]sss",
 		"kmod[p.b]lib",
 		"[az]1234[AZ]",
-		NULL,
 		// clang-format on
 	};
 
 	char buf[PATH_MAX];
 	size_t len;
-	const char *const *alias;
 
-	for (alias = input; *alias != NULL; alias++) {
+	for (size_t i = 0; i < ARRAY_SIZE(aliases); i++) {
 		int ret;
 
-		ret = alias_normalize(*alias, buf, &len);
-		printf("input   %s\n", *alias);
+		ret = alias_normalize(aliases[i], buf, &len);
+		printf("input   %s\n", aliases[i]);
 		printf("return  %d\n", ret);
 
 		if (ret == 0) {
@@ -56,12 +54,11 @@ DEFINE_TEST(alias_1,
 	.config = {
 		[TC_ROOTFS] = TESTSUITE_ROOTFS "test-util/",
 	},
-	.need_spawn = true,
 	.output = {
 		.out = TESTSUITE_ROOTFS "test-util/alias-correct.txt",
 	});
 
-static int test_freadline_wrapped(const struct test *t)
+static int test_freadline_wrapped(void)
 {
 	FILE *fp = fopen("/freadline_wrapped-input.txt", "re");
 
@@ -86,12 +83,11 @@ DEFINE_TEST(test_freadline_wrapped,
 	.config = {
 		[TC_ROOTFS] = TESTSUITE_ROOTFS "test-util/",
 	},
-	.need_spawn = true,
 	.output = {
 		.out = TESTSUITE_ROOTFS "test-util/freadline_wrapped-correct.txt",
 	});
 
-static int test_strchr_replace(const struct test *t)
+static int test_strchr_replace(void)
 {
 	_cleanup_free_ char *s = strdup("this is a test string");
 	const char *res = "thiC iC a teCt Ctring";
@@ -101,70 +97,75 @@ static int test_strchr_replace(const struct test *t)
 
 	return EXIT_SUCCESS;
 }
-DEFINE_TEST(test_strchr_replace, .description = "check implementation of strchr_replace()")
+DEFINE_TEST(test_strchr_replace,
+	    .description = "check implementation of strchr_replace()");
 
-static int test_underscores(const struct test *t)
+static int test_underscores(void)
 {
-	struct teststr {
-		char *val;
+	static const struct teststr {
+		const char *val;
 		const char *res;
 	} teststr[] = {
-		{ strdup("aa-bb-cc_"), "aa_bb_cc_" },
-		{ strdup("-aa-bb-cc-"), "_aa_bb_cc_" },
-		{ strdup("-aa[-bb-]cc-"), "_aa[-bb-]cc_" },
-		{ strdup("-aa-[bb]-cc-"), "_aa_[bb]_cc_" },
-		{ strdup("-aa-[b-b]-cc-"), "_aa_[b-b]_cc_" },
-		{ strdup("-aa-b[-]b-cc"), "_aa_b[-]b_cc" },
-		{ },
-	}, *iter;
+		// clang-format off
+		{ "aa-bb-cc_", "aa_bb_cc_" },
+		{ "-aa-bb-cc-", "_aa_bb_cc_" },
+		{ "-aa[-bb-]cc-", "_aa[-bb-]cc_" },
+		{ "-aa-[bb]-cc-", "_aa_[bb]_cc_" },
+		{ "-aa-[b-b]-cc-", "_aa_[b-b]_cc_" },
+		{ "-aa-b[-]b-cc", "_aa_b[-]b_cc" },
+		// clang-format on
+	};
 
-	for (iter = &teststr[0]; iter->val != NULL; iter++) {
-		_cleanup_free_ char *val = iter->val;
+	for (size_t i = 0; i < ARRAY_SIZE(teststr); i++) {
+		_cleanup_free_ char *val = strdup(teststr[i].val);
+		assert_return(val != NULL, EXIT_FAILURE);
 		assert_return(!underscores(val), EXIT_FAILURE);
-		assert_return(streq(val, iter->res), EXIT_FAILURE);
+		assert_return(streq(val, teststr[i].res), EXIT_FAILURE);
 	}
 
 	return EXIT_SUCCESS;
 }
-DEFINE_TEST(test_underscores, .description = "check implementation of underscores()")
+DEFINE_TEST(test_underscores, .description = "check implementation of underscores()");
 
-static int test_path_ends_with_kmod_ext(const struct test *t)
+static int test_path_ends_with_kmod_ext(void)
 {
-	struct teststr {
+	static const struct teststr {
 		const char *val;
 		bool res;
 	} teststr[] = {
+		// clang-format off
 		{ "/bla.ko", true },
-#ifdef ENABLE_ZLIB
+#if ENABLE_ZLIB
 		{ "/bla.ko.gz", true },
 #endif
-#ifdef ENABLE_XZ
+#if ENABLE_XZ
 		{ "/bla.ko.xz", true },
 #endif
-#ifdef ENABLE_ZSTD
+#if ENABLE_ZSTD
 		{ "/bla.ko.zst", true },
 #endif
 		{ "/bla.ko.x", false },
 		{ "/bla.ko.", false },
 		{ "/bla.koz", false },
 		{ "/b", false },
-		{ },
-	}, *iter;
+		// clang-format on
+	};
 
-	for (iter = &teststr[0]; iter->val != NULL; iter++) {
-		assert_return(path_ends_with_kmod_ext(iter->val, strlen(iter->val)) ==
-				      iter->res,
+	for (size_t i = 0; i < ARRAY_SIZE(teststr); i++) {
+		assert_return(path_ends_with_kmod_ext(teststr[i].val,
+						      strlen(teststr[i].val)) ==
+				      teststr[i].res,
 			      EXIT_FAILURE);
 	}
 
 	return EXIT_SUCCESS;
 }
 DEFINE_TEST(test_path_ends_with_kmod_ext,
-	    .description = "check implementation of path_ends_with_kmod_ext()")
+	    .description = "check implementation of path_ends_with_kmod_ext()");
 
 #define TEST_WRITE_STR_SAFE_FILE "/write-str-safe"
 #define TEST_WRITE_STR_SAFE_PATH TESTSUITE_ROOTFS "test-util2/" TEST_WRITE_STR_SAFE_FILE
-static int test_write_str_safe(const struct test *t)
+static int test_write_str_safe(void)
 {
 	const char *s = "test";
 	int fd;
@@ -182,7 +183,6 @@ DEFINE_TEST(test_write_str_safe,
 	.config = {
 		[TC_ROOTFS] = TESTSUITE_ROOTFS "test-util2/",
 	},
-	.need_spawn = true,
 	.output = {
 		.files = (const struct keyval[]) {
 			{ TEST_WRITE_STR_SAFE_PATH ".txt",
@@ -191,7 +191,7 @@ DEFINE_TEST(test_write_str_safe,
 		},
 	});
 
-static int test_uadd32_overflow(const struct test *t)
+static int test_uadd32_overflow(void)
 {
 	uint32_t res;
 	bool overflow;
@@ -206,9 +206,9 @@ static int test_uadd32_overflow(const struct test *t)
 	return EXIT_SUCCESS;
 }
 DEFINE_TEST(test_uadd32_overflow,
-	    .description = "check implementation of uadd32_overflow()")
+	    .description = "check implementation of uadd32_overflow()");
 
-static int test_uadd64_overflow(const struct test *t)
+static int test_uadd64_overflow(void)
 {
 	uint64_t res;
 	bool overflow;
@@ -223,9 +223,9 @@ static int test_uadd64_overflow(const struct test *t)
 	return EXIT_SUCCESS;
 }
 DEFINE_TEST(test_uadd64_overflow,
-	    .description = "check implementation of uadd64_overflow()")
+	    .description = "check implementation of uadd64_overflow()");
 
-static int test_umul32_overflow(const struct test *t)
+static int test_umul32_overflow(void)
 {
 	uint32_t res;
 	bool overflow;
@@ -240,9 +240,9 @@ static int test_umul32_overflow(const struct test *t)
 	return EXIT_SUCCESS;
 }
 DEFINE_TEST(test_umul32_overflow,
-	    .description = "check implementation of umul32_overflow()")
+	    .description = "check implementation of umul32_overflow()");
 
-static int test_umul64_overflow(const struct test *t)
+static int test_umul64_overflow(void)
 {
 	uint64_t res;
 	bool overflow;
@@ -257,44 +257,43 @@ static int test_umul64_overflow(const struct test *t)
 	return EXIT_SUCCESS;
 }
 DEFINE_TEST(test_umul64_overflow,
-	    .description = "check implementation of umul64_overflow()")
+	    .description = "check implementation of umul64_overflow()");
 
-static int test_backoff_time(const struct test *t)
+static int test_backoff_time(void)
 {
 	unsigned long long delta = 0;
 
 	/* Check exponential increments */
-	get_backoff_delta_msec(now_msec(), now_msec() + 10, &delta);
+	get_backoff_delta_msec(now_msec() + 10, &delta);
 	assert_return(delta == 1, EXIT_FAILURE);
-	get_backoff_delta_msec(now_msec(), now_msec() + 10, &delta);
+	get_backoff_delta_msec(now_msec() + 10, &delta);
 	assert_return(delta == 2, EXIT_FAILURE);
-	get_backoff_delta_msec(now_msec(), now_msec() + 10, &delta);
+	get_backoff_delta_msec(now_msec() + 10, &delta);
 	assert_return(delta == 4, EXIT_FAILURE);
-	get_backoff_delta_msec(now_msec(), now_msec() + 10, &delta);
+	get_backoff_delta_msec(now_msec() + 10, &delta);
+	assert_return(delta == 8, EXIT_FAILURE);
+	get_backoff_delta_msec(now_msec() + 10, &delta);
 	assert_return(delta == 8, EXIT_FAILURE);
 
 	{
-		unsigned long long t0, tend;
-
 		/* Check tail */
 		delta = 4;
-		tend = now_msec() + 3;
-		t0 = tend - 10;
-		get_backoff_delta_msec(t0, tend, &delta);
+		get_backoff_delta_msec(now_msec() + 3, &delta);
 		assert_return(delta == 2, EXIT_FAILURE);
-		tend = now_msec() + 1;
-		t0 = tend - 9;
-		get_backoff_delta_msec(t0, tend, &delta);
+		get_backoff_delta_msec(now_msec() + 1, &delta);
 		assert_return(delta == 1, EXIT_FAILURE);
-		tend = now_msec();
-		t0 = tend - 10;
-		get_backoff_delta_msec(t0, tend, &delta);
+		get_backoff_delta_msec(now_msec(), &delta);
 		assert_return(delta == 0, EXIT_FAILURE);
 	}
+
+	/* Check when end time has passed */
+	delta = 0;
+	get_backoff_delta_msec(now_msec() - 10, &delta);
+	assert_return(delta == 0, EXIT_FAILURE);
 
 	return EXIT_SUCCESS;
 }
 DEFINE_TEST(test_backoff_time,
-	    .description = "check implementation of get_backoff_delta_msec()")
+	    .description = "check implementation of get_backoff_delta_msec()");
 
 TESTSUITE_MAIN();

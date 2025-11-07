@@ -3,7 +3,6 @@
  * Copyright (C) 2012-2013  ProFUSION embedded systems
  */
 
-#include <errno.h>
 #include <inttypes.h>
 #include <stddef.h>
 #include <stdio.h>
@@ -15,7 +14,7 @@
 
 #include "testsuite.h"
 
-static int from_name(const struct test *t)
+static int from_name(void)
 {
 	static const char *const modnames[] = {
 		// clang-format off
@@ -24,10 +23,8 @@ static int from_name(const struct test *t)
 		"snd-hda-intel",
 		"snd-timer",
 		"iTCO_wdt",
-		NULL,
 		// clang-format on
 	};
-	const char *const *p;
 	struct kmod_ctx *ctx;
 	struct kmod_module *mod;
 	const char *null_config = NULL;
@@ -35,12 +32,12 @@ static int from_name(const struct test *t)
 
 	ctx = kmod_new(NULL, &null_config);
 	if (ctx == NULL)
-		exit(EXIT_FAILURE);
+		return EXIT_FAILURE;
 
-	for (p = modnames; p != NULL; p++) {
-		err = kmod_module_new_from_name(ctx, *p, &mod);
+	for (size_t i = 0; i < ARRAY_SIZE(modnames); i++) {
+		err = kmod_module_new_from_name(ctx, modnames[i], &mod);
 		if (err < 0)
-			exit(EXIT_SUCCESS);
+			return EXIT_FAILURE;
 
 		printf("modname: %s\n", kmod_module_get_name(mod));
 		kmod_module_unref(mod);
@@ -55,31 +52,28 @@ DEFINE_TEST(from_name,
 	.config = {
 		[TC_ROOTFS] = TESTSUITE_ROOTFS "test-new-module/from_name/",
 	},
-	.need_spawn = true,
 	.output = {
 		.out = TESTSUITE_ROOTFS "test-new-module/from_name/correct.txt",
 	});
 
-static int from_alias(const struct test *t)
+static int from_alias(void)
 {
 	static const char *const modnames[] = {
 		"ext4.*",
-		NULL,
 	};
-	const char *const *p;
 	struct kmod_ctx *ctx;
 	int err;
 
 	ctx = kmod_new(NULL, NULL);
 	if (ctx == NULL)
-		exit(EXIT_FAILURE);
+		return EXIT_FAILURE;
 
-	for (p = modnames; p != NULL; p++) {
+	for (size_t i = 0; i < ARRAY_SIZE(modnames); i++) {
 		struct kmod_list *l, *list = NULL;
 
-		err = kmod_module_new_from_lookup(ctx, *p, &list);
+		err = kmod_module_new_from_lookup(ctx, modnames[i], &list);
 		if (err < 0)
-			exit(EXIT_SUCCESS);
+			return EXIT_FAILURE;
 
 		kmod_list_foreach(l, list) {
 			struct kmod_module *m;
@@ -100,7 +94,6 @@ DEFINE_TEST(from_alias,
 	.config = {
 		[TC_ROOTFS] = TESTSUITE_ROOTFS "test-new-module/from_alias/",
 	},
-	.need_spawn = true,
 	.output = {
 		.out = TESTSUITE_ROOTFS "test-new-module/from_alias/correct.txt",
 	});

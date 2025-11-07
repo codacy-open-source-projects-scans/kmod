@@ -8,6 +8,7 @@
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
+#include <unistd.h>
 
 #include <shared/util.h>
 
@@ -19,6 +20,8 @@ static const char cmdopts_s[] = "fsvVh";
 static const struct option cmdopts[] = {
 	// clang-format off
 	{ "force", no_argument, 0, 'f' },
+	{ "force-modversion", no_argument, 0, 2 },
+	{ "force-vermagic", no_argument, 0, 1 },
 	{ "syslog", no_argument, 0, 's' },
 	{ "verbose", no_argument, 0, 'v' },
 	{ "version", no_argument, 0, 'V' },
@@ -32,12 +35,16 @@ static void help(void)
 	printf("Usage:\n"
 	       "\t%s [options] filename [module options]\n"
 	       "Options:\n"
-	       "\t-f, --force       DANGEROUS: forces a module load, may cause\n"
-	       "\t                  data corruption and crash your machine\n"
-	       "\t-s, --syslog      print to syslog, not stderr\n"
-	       "\t-v, --verbose     enables more messages\n"
-	       "\t-V, --version     show version\n"
-	       "\t-h, --help        show this help\n",
+	       "\t-f, --force              DANGEROUS: forces a module load, may cause\n"
+	       "\t                         data corruption and crash your machine.\n"
+	       "\t                         implies --force-modversion and\n"
+	       "\t                         --force-vermagic\n"
+	       "\t    --force-modversion   Ignore module's version\n"
+	       "\t    --force-vermagic     Ignore module's version magic\n"
+	       "\t-s, --syslog             print to syslog, not stderr\n"
+	       "\t-v, --verbose            enables more messages\n"
+	       "\t-V, --version            show version\n"
+	       "\t-h, --help               show this help\n",
 	       program_invocation_short_name);
 }
 
@@ -63,25 +70,26 @@ static int do_insmod(int argc, char *argv[])
 	struct kmod_module *mod;
 	const char *filename;
 	char *opts = NULL;
-	size_t optslen = 0;
 	int verbose = LOG_ERR;
-	int use_syslog = 0;
-	int i, r = 0;
+	bool use_syslog = false;
+	int c, r = 0;
 	const char *null_config = NULL;
 	unsigned int flags = 0;
 
-	for (;;) {
-		int c, idx = 0;
-		c = getopt_long(argc, argv, cmdopts_s, cmdopts, &idx);
-		if (c == -1)
-			break;
+	while ((c = getopt_long(argc, argv, cmdopts_s, cmdopts, NULL)) != -1) {
 		switch (c) {
 		case 'f':
 			flags |= KMOD_PROBE_FORCE_MODVERSION;
 			flags |= KMOD_PROBE_FORCE_VERMAGIC;
 			break;
+		case 2:
+			flags |= KMOD_PROBE_FORCE_MODVERSION;
+			break;
+		case 1:
+			flags |= KMOD_PROBE_FORCE_VERMAGIC;
+			break;
 		case 's':
-			use_syslog = 1;
+			use_syslog = true;
 			break;
 		case 'v':
 			verbose++;
@@ -115,23 +123,9 @@ static int do_insmod(int argc, char *argv[])
 		goto end;
 	}
 
-	for (i = optind + 1; i < argc; i++) {
-		size_t len = strlen(argv[i]);
-		void *tmp = realloc(opts, optslen + len + 2);
-		if (tmp == NULL) {
-			ERR("out of memory\n");
-			r = EXIT_FAILURE;
-			goto end;
-		}
-		opts = tmp;
-		if (optslen > 0) {
-			opts[optslen] = ' ';
-			optslen++;
-		}
-		memcpy(opts + optslen, argv[i], len);
-		optslen += len;
-		opts[optslen] = '\0';
-	}
+	r = options_from_array(argv + optind + 1, argc - optind - 1, &opts);
+	if (r < 0)
+		goto end;
 
 	ctx = kmod_new(NULL, &null_config);
 	if (!ctx) {

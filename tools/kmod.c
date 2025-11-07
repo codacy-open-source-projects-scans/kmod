@@ -3,7 +3,6 @@
  * Copyright (C) 2011-2013  ProFUSION embedded systems
  */
 
-#include <errno.h>
 #include <getopt.h>
 #include <stdio.h>
 #include <stdlib.h>
@@ -25,13 +24,13 @@ static const struct option options[] = {
 
 static const struct kmod_cmd kmod_cmd_help;
 
-static const struct kmod_cmd *kmod_cmds[] = {
+static const struct kmod_cmd *const kmod_cmds[] = {
 	&kmod_cmd_help,
 	&kmod_cmd_list,
 	&kmod_cmd_static_nodes,
 };
 
-static const struct kmod_cmd *kmod_compat_cmds[] = {
+static const struct kmod_cmd *const kmod_compat_cmds[] = {
 	// clang-format off
 	&kmod_cmd_compat_lsmod,
 	&kmod_cmd_compat_rmmod,
@@ -42,7 +41,7 @@ static const struct kmod_cmd *kmod_compat_cmds[] = {
 	// clang-format on
 };
 
-static int kmod_help(int argc, char *argv[])
+static int kmod_help(_maybe_unused_ int argc, _maybe_unused_ char *argv[])
 {
 	size_t i;
 
@@ -53,7 +52,7 @@ static int kmod_help(int argc, char *argv[])
 	       "\t-V, --version     show version\n"
 	       "\t-h, --help        show this help\n\n"
 	       "Commands:\n",
-	       basename(argv[0]));
+	       program_invocation_short_name);
 
 	for (i = 0; i < ARRAY_SIZE(kmod_cmds); i++) {
 		if (kmod_cmds[i]->help != NULL) {
@@ -76,7 +75,7 @@ static int kmod_help(int argc, char *argv[])
 static const struct kmod_cmd kmod_cmd_help = {
 	.name = "help",
 	.cmd = kmod_help,
-	.help = "Show help message",
+	.help = "show help message",
 };
 
 static int handle_kmod_commands(int argc, char *argv[])
@@ -136,13 +135,10 @@ fail:
 
 static int handle_kmod_compat_commands(int argc, char *argv[])
 {
-	const char *cmd;
 	size_t i;
 
-	cmd = basename(argv[0]);
-
 	for (i = 0; i < ARRAY_SIZE(kmod_compat_cmds); i++) {
-		if (streq(kmod_compat_cmds[i]->name, cmd))
+		if (streq(kmod_compat_cmds[i]->name, program_invocation_short_name))
 			return kmod_compat_cmds[i]->cmd(argc, argv);
 	}
 

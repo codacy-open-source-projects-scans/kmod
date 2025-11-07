@@ -27,11 +27,11 @@ static void kmod_list_remove_all(struct kmod_list *list)
 		list = kmod_list_remove(list);
 }
 
-static int test_list_last(const struct test *t)
+static int test_list_last(void)
 {
 	struct kmod_list *list = NULL, *last;
 	int i;
-	const char *v[] = { "v1", "v2", "v3", "v4", "v5" };
+	static const char *const v[] = { "v1", "v2", "v3", "v4", "v5" };
 	const int N = ARRAY_SIZE(v);
 
 	for (i = 0; i < N; i++)
@@ -47,11 +47,11 @@ static int test_list_last(const struct test *t)
 }
 DEFINE_TEST(test_list_last, .description = "test for the last element of a list");
 
-static int test_list_prev(const struct test *t)
+static int test_list_prev(void)
 {
 	struct kmod_list *list = NULL, *l, *p;
 	int i;
-	const char *v[] = { "v1", "v2", "v3", "v4", "v5" };
+	static const char *const v[] = { "v1", "v2", "v3", "v4", "v5" };
 	const int N = ARRAY_SIZE(v);
 
 	l = kmod_list_prev(list, list);
@@ -76,38 +76,12 @@ static int test_list_prev(const struct test *t)
 }
 DEFINE_TEST(test_list_prev, .description = "test list prev");
 
-static int test_list_remove_n_latest(const struct test *t)
+static int test_list_remove_data(void)
 {
 	struct kmod_list *list = NULL, *l;
 	int i;
-	const char *v[] = { "v1", "v2", "v3", "v4", "v5" };
-	const int N = ARRAY_SIZE(v), M = N / 2;
-
-	for (i = 0; i < N; i++)
-		list = kmod_list_append(list, v[i]);
-	assert_return(len(list) == N, EXIT_FAILURE);
-
-	list = kmod_list_remove_n_latest(list, M);
-	assert_return(len(list) == N - M, EXIT_FAILURE);
-
-	i = 0;
-	kmod_list_foreach(l, list) {
-		assert_return(l->data == v[i], EXIT_FAILURE);
-		i++;
-	}
-
-	kmod_list_remove_all(list);
-
-	return 0;
-}
-DEFINE_TEST(test_list_remove_n_latest,
-	    .description = "test list function to remove n latest elements");
-
-static int test_list_remove_data(const struct test *t)
-{
-	struct kmod_list *list = NULL, *l;
-	int i;
-	const char *v[] = { "v1", "v2", "v3", "v4", "v5" }, *removed;
+	static const char *const v[] = { "v1", "v2", "v3", "v4", "v5" };
+	const char *removed;
 	const int N = ARRAY_SIZE(v);
 
 	for (i = 0; i < N; i++)
@@ -127,11 +101,11 @@ static int test_list_remove_data(const struct test *t)
 DEFINE_TEST(test_list_remove_data,
 	    .description = "test list function to remove element by data");
 
-static int test_list_append_list(const struct test *t)
+static int test_list_append_list(void)
 {
 	struct kmod_list *a = NULL, *b = NULL, *c, *l;
 	int i;
-	const char *v[] = { "v1", "v2", "v3", "v4", "v5" };
+	static const char *const v[] = { "v1", "v2", "v3", "v4", "v5" };
 	const int N = ARRAY_SIZE(v), M = N / 2;
 
 	for (i = 0; i < M; i++)
@@ -164,7 +138,7 @@ static int test_list_append_list(const struct test *t)
 DEFINE_TEST(test_list_append_list,
 	    .description = "test list function to append another list");
 
-static int test_list_insert_before(const struct test *t)
+static int test_list_insert_before(void)
 {
 	struct kmod_list *list = NULL, *l;
 	const char *v1 = "v1", *v2 = "v2", *v3 = "v3", *vx = "vx";
@@ -199,7 +173,7 @@ static int test_list_insert_before(const struct test *t)
 DEFINE_TEST(test_list_insert_before,
 	    .description = "test list function to insert before element");
 
-static int test_list_insert_after(const struct test *t)
+static int test_list_insert_after(void)
 {
 	struct kmod_list *list = NULL, *l;
 	const char *v1 = "v1", *v2 = "v2", *v3 = "v3", *vx = "vx";

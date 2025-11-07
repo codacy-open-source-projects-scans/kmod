@@ -3,8 +3,6 @@
  * Copyright © 2024 Intel Corporation
  */
 
-#include <errno.h>
-
 #include <libkmod/libkmod-internal.h>
 
 struct kmod_ctx;
@@ -20,28 +18,28 @@ struct kmod_file {
 	struct kmod_elf *elf;
 };
 
-#ifdef ENABLE_XZ
+#if ENABLE_XZ
 int kmod_file_load_xz(struct kmod_file *file);
 #else
-static inline int kmod_file_load_xz(struct kmod_file *file)
+static inline int kmod_file_load_xz(_maybe_unused_ struct kmod_file *file)
 {
 	return -ENOSYS;
 }
 #endif
 
-#ifdef ENABLE_ZLIB
+#if ENABLE_ZLIB
 int kmod_file_load_zlib(struct kmod_file *file);
 #else
-static inline int kmod_file_load_zlib(struct kmod_file *file)
+static inline int kmod_file_load_zlib(_maybe_unused_ struct kmod_file *file)
 {
 	return -ENOSYS;
 }
 #endif
 
-#ifdef ENABLE_ZSTD
+#if ENABLE_ZSTD
 int kmod_file_load_zstd(struct kmod_file *file);
 #else
-static inline int kmod_file_load_zstd(struct kmod_file *file)
+static inline int kmod_file_load_zstd(_maybe_unused_ struct kmod_file *file)
 {
 	return -ENOSYS;
 }

@@ -3,7 +3,6 @@
  * Copyright (C) 2011-2013  ProFUSION embedded systems
  */
 
-#include <errno.h>
 #include <inttypes.h>
 #include <stddef.h>
 #include <stdio.h>
@@ -19,7 +18,7 @@
 
 #define TEST_UNAME "4.0.20-kmod"
 
-static noreturn int test_dependencies(const struct test *t)
+static int test_dependencies(void)
 {
 	struct kmod_ctx *ctx;
 	struct kmod_module *mod = NULL;
@@ -30,12 +29,12 @@ static noreturn int test_dependencies(const struct test *t)
 
 	ctx = kmod_new(NULL, NULL);
 	if (ctx == NULL)
-		exit(EXIT_FAILURE);
+		return EXIT_FAILURE;
 
 	err = kmod_module_new_from_name(ctx, "mod-foo", &mod);
 	if (err < 0 || mod == NULL) {
 		kmod_unref(ctx);
-		exit(EXIT_FAILURE);
+		return EXIT_FAILURE;
 	}
 
 	list = kmod_module_get_dependencies(mod);
@@ -58,20 +57,19 @@ static noreturn int test_dependencies(const struct test *t)
 
 	/* fooa, foob, fooc */
 	if (len != 3 || !fooa || !foob || !fooc)
-		exit(EXIT_FAILURE);
+		return EXIT_FAILURE;
 
 	kmod_module_unref_list(list);
 	kmod_module_unref(mod);
 	kmod_unref(ctx);
 
-	exit(EXIT_SUCCESS);
+	return EXIT_SUCCESS;
 }
 DEFINE_TEST(test_dependencies,
-	.description = "test if kmod_module_get_dependencies works",
-	.config = {
-		[TC_UNAME_R] = TEST_UNAME,
-		[TC_ROOTFS] = TESTSUITE_ROOTFS "test-dependencies/",
-	},
-	.need_spawn = true);
+	    .description = "test if kmod_module_get_dependencies works",
+	    .config = {
+		    [TC_UNAME_R] = TEST_UNAME,
+		    [TC_ROOTFS] = TESTSUITE_ROOTFS "test-dependencies/",
+	    });
 
 TESTSUITE_MAIN();

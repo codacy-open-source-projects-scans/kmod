@@ -8,7 +8,6 @@ MODULE_PLAYGROUND=$3
 CONFIG_H=$4
 SYSCONFDIR=$5
 MODULE_DIRECTORY=$6
-ANOTHER_MODULE_DIRECTORY=/foobar
 
 # create rootfs from rootfs-pristine
 
@@ -83,6 +82,7 @@ map=(
     ["test-modprobe/show-depends$MODULE_DIRECTORY/4.4.4/kernel/mod-loop-b.ko"]="mod-loop-b.ko"
     ["test-modprobe/show-depends$MODULE_DIRECTORY/4.4.4/kernel/mod-simple.ko"]="mod-simple.ko"
     ["test-modprobe/show-exports/mod-loop-a.ko"]="mod-loop-a.ko"
+    ["test-modprobe/show-exports-module$MODULE_DIRECTORY/4.4.4/kernel/mod-loop-b.ko"]="mod-loop-b.ko"
     ["test-modprobe/softdep-loop$MODULE_DIRECTORY/4.4.4/kernel/mod-loop-a.ko"]="mod-loop-a.ko"
     ["test-modprobe/softdep-loop$MODULE_DIRECTORY/4.4.4/kernel/mod-loop-b.ko"]="mod-loop-b.ko"
     ["test-modprobe/weakdep-loop$MODULE_DIRECTORY/4.4.4/kernel/mod-loop-a.ko"]="mod-loop-a.ko"
@@ -91,8 +91,12 @@ map=(
     ["test-modprobe/install-cmd-loop$MODULE_DIRECTORY/4.4.4/kernel/mod-loop-a.ko"]="mod-loop-a.ko"
     ["test-modprobe/install-cmd-loop$MODULE_DIRECTORY/4.4.4/kernel/mod-loop-b.ko"]="mod-loop-b.ko"
     ["test-modprobe/force$MODULE_DIRECTORY/4.4.4/kernel/"]="mod-simple.ko"
+    ["test-modprobe/force-modversion$MODULE_DIRECTORY/4.4.4/kernel/"]="mod-simple.ko"
+    ["test-modprobe/force-vermagic$MODULE_DIRECTORY/4.4.4/kernel/"]="mod-simple.ko"
     ["test-modprobe/oldkernel$MODULE_DIRECTORY/3.3.3/kernel/"]="mod-simple.ko"
     ["test-modprobe/oldkernel-force$MODULE_DIRECTORY/3.3.3/kernel/"]="mod-simple.ko"
+    ["test-modprobe/oldkernel-force-modversion$MODULE_DIRECTORY/3.3.3/kernel/"]="mod-simple.ko"
+    ["test-modprobe/oldkernel-force-vermagic$MODULE_DIRECTORY/3.3.3/kernel/"]="mod-simple.ko"
     ["test-modprobe/alias-to-none$MODULE_DIRECTORY/4.4.4/kernel/"]="mod-simple.ko"
     ["test-modprobe/module-param-kcmdline$MODULE_DIRECTORY/4.4.4/kernel/"]="mod-simple.ko"
     ["test-modprobe/external/lib/modules/external/"]="mod-simple.ko"
@@ -104,7 +108,8 @@ map=(
     ["test-depmod/modules-outdir$MODULE_DIRECTORY/4.4.4/kernel/drivers/block/cciss.ko"]="mod-fake-cciss.ko"
     ["test-depmod/modules-outdir$MODULE_DIRECTORY/4.4.4/kernel/drivers/scsi/hpsa.ko"]="mod-fake-hpsa.ko"
     ["test-depmod/modules-outdir$MODULE_DIRECTORY/4.4.4/kernel/drivers/scsi/scsi_mod.ko"]="mod-fake-scsi-mod.ko"
-    ["test-depmod/another-moddir$ANOTHER_MODULE_DIRECTORY/4.4.4/kernel/"]="mod-simple.ko"
+    ["test-depmod/another-moddir/foobar/4.4.4/kernel/"]="mod-simple.ko"
+    ["test-depmod/another-moddir/foobar2/4.4.4/kernel/"]="mod-simple.ko"
     # TODO: add cross-compiled modules to the test
     ["test-modinfo/mod-simple.ko"]="mod-simple.ko"
     ["test-modinfo/mod-simple-sha1.ko"]="mod-simple.ko"
@@ -115,6 +120,11 @@ map=(
     ["test-weakdep$MODULE_DIRECTORY/4.4.4/kernel/mod-loop-b.ko"]="mod-loop-b.ko"
     ["test-weakdep$MODULE_DIRECTORY/4.4.4/kernel/mod-simple.ko"]="mod-simple.ko"
     ["test-weakdep$MODULE_DIRECTORY/4.4.4/kernel/mod-weakdep.ko"]="mod-weakdep.ko"
+    ["test-multi-softdep$MODULE_DIRECTORY/4.4.4/kernel/mod-foo-a.ko"]="mod-foo-a.ko"
+    ["test-multi-softdep$MODULE_DIRECTORY/4.4.4/kernel/mod-foo-b.ko"]="mod-foo-b.ko"
+    ["test-multi-softdep$MODULE_DIRECTORY/4.4.4/kernel/mod-foo-c.ko"]="mod-foo-c.ko"
+    ["test-multi-softdep$MODULE_DIRECTORY/4.4.4/kernel/mod-softdep-a.ko"]="mod-softdep-a.ko"
+    ["test-multi-softdep$MODULE_DIRECTORY/4.4.4/kernel/mod-softdep-b.ko"]="mod-softdep-b.ko"
 )
 
 gzip_array=(

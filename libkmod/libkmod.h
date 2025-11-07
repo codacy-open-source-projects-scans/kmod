@@ -641,7 +641,7 @@ int kmod_module_new_from_name(struct kmod_ctx *ctx, const char *name,
  * @mod: where to save the created struct kmod_module
  *
  * Create a new struct kmod_module using the module path. @path must be an
- * existent file with in the filesystem and must be accessible to libkmod.
+ * existent file within the filesystem and must be accessible to libkmod.
  *
  * The initial refcount is 1, and needs to be decremented to release the
  * resources of the kmod_module. Since libkmod keeps track of all
@@ -946,6 +946,7 @@ int kmod_module_apply_filter(const struct kmod_ctx *ctx, enum kmod_filter filter
  * list.
  *
  * Since: 1
+ * Deprecated: 6: Use #kmod_module_apply_filter instead.
  */
 int kmod_module_get_filtered_blacklist(const struct kmod_ctx *ctx,
 				       const struct kmod_list *input,

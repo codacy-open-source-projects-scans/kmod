@@ -31,7 +31,7 @@ static const char *ANSI_HIGHLIGHT_RED_ON = "\x1B[1;31m";
 static const char *ANSI_HIGHLIGHT_OFF = "\x1B[0m";
 
 static const char *progname;
-static int oneshot = 0;
+static int oneshot;
 static const char options_short[] = "lhn";
 static const struct option options[] = {
 	{ "list", no_argument, 0, 'l' },
@@ -82,6 +82,9 @@ int test_init(const struct test *start, const struct test *stop, int argc,
 {
 	progname = argv[0];
 
+	/* An empty testsuite is not likely intended */
+	assert_return(start != stop, -EINVAL);
+
 	for (;;) {
 		int c, idx = 0;
 		c = getopt_long(argc, argv, options_short, options, &idx);
@@ -101,6 +104,18 @@ int test_init(const struct test *start, const struct test *stop, int argc,
 			return -1;
 		default:
 			ERR("unexpected getopt_long() value %c\n", c);
+			return -1;
+		}
+	}
+
+	if (oneshot) {
+		if ((optind + 1) != argc) {
+			ERR("Too many arguments provided. Only one is supported - the testname\n");
+			return -1;
+		}
+	} else {
+		if (optind != argc && (optind + 1) != argc) {
+			ERR("Invalid number of arguments provided. One optional can be provided - the testname\n");
 			return -1;
 		}
 	}
@@ -139,10 +154,7 @@ static int test_spawn_test(const struct test *t)
 
 static int test_run_spawned(const struct test *t)
 {
-	int err = t->func(t);
-	exit(err);
-
-	return EXIT_FAILURE;
+	return t->func();
 }
 
 int test_spawn_prog(const char *prog, const char *const args[])
@@ -228,7 +240,7 @@ static inline int test_run_child(const struct test *t, int fdout[2], int fderr[2
 		close(fdout[0]);
 		if (dup2(fdout[1], STDOUT_FILENO) < 0) {
 			ERR("could not redirect stdout to pipe: %m\n");
-			exit(EXIT_FAILURE);
+			return EXIT_FAILURE;
 		}
 	}
 
@@ -236,7 +248,7 @@ static inline int test_run_child(const struct test *t, int fdout[2], int fderr[2
 		close(fderr[0]);
 		if (dup2(fderr[1], STDERR_FILENO) < 0) {
 			ERR("could not redirect stderr to pipe: %m\n");
-			exit(EXIT_FAILURE);
+			return EXIT_FAILURE;
 		}
 	}
 
@@ -249,25 +261,22 @@ static inline int test_run_child(const struct test *t, int fdout[2], int fderr[2
 
 		if (stat(stamp, &stampst) != 0) {
 			ERR("could not stat %s\n - %m", stamp);
-			exit(EXIT_FAILURE);
+			return EXIT_FAILURE;
 		}
 
 		if (stat(rootfs, &rootfsst) != 0) {
 			ERR("could not stat %s\n - %m", rootfs);
-			exit(EXIT_FAILURE);
+			return EXIT_FAILURE;
 		}
 
 		if (stat_mstamp(&rootfsst) > stat_mstamp(&stampst)) {
-			ERR("rootfs %s is dirty, please run 'meson compile testsuite/stamp-rootfs' before running this test\n",
+			ERR("rootfs %s is dirty, please run 'meson compile testsuite/create-rootfs' before running this test\n",
 			    rootfs);
-			exit(EXIT_FAILURE);
+			return EXIT_FAILURE;
 		}
 	}
 
-	if (t->need_spawn)
-		return test_spawn_test(t);
-	else
-		return test_run_spawned(t);
+	return test_spawn_test(t);
 }
 
 #define BUFSZ 4096
@@ -434,7 +443,7 @@ static bool fd_cmp_regex_one(const char *pattern, const char *s)
  * read fd and fd_match, checking the first matches the regex of the second,
  * line by line
  */
-static bool fd_cmp_regex(struct fd_cmp *fd_cmp, const struct test *t)
+static bool fd_cmp_regex(struct fd_cmp *fd_cmp)
 {
 	char *p, *p_match;
 	int done = 0, done_match = 0, r;
@@ -525,7 +534,7 @@ static bool fd_cmp_regex(struct fd_cmp *fd_cmp, const struct test *t)
 }
 
 /* read fd and fd_match, checking they match exactly */
-static bool fd_cmp_exact(struct fd_cmp *fd_cmp, const struct test *t)
+static bool fd_cmp_exact(struct fd_cmp *fd_cmp)
 {
 	int r, rmatch, done = 0;
 
@@ -552,9 +561,6 @@ static bool fd_cmp_exact(struct fd_cmp *fd_cmp, const struct test *t)
 
 	fd_cmp->buf[r] = '\0';
 	fd_cmp->buf_match[r] = '\0';
-
-	if (t->print_outputs)
-		printf("%s: %s\n", fd_cmp->name, fd_cmp->buf);
 
 	if (!streq(fd_cmp->buf, fd_cmp->buf_match)) {
 		ERR("Outputs do not match on %s:\n", fd_cmp->name);
@@ -632,9 +638,9 @@ static bool test_run_parent_check_outputs(const struct test *t, int fdout, int f
 					goto out;
 
 				if (t->output.regex)
-					ret = fd_cmp_regex(fd_cmp, t);
+					ret = fd_cmp_regex(fd_cmp);
 				else
-					ret = fd_cmp_exact(fd_cmp, t);
+					ret = fd_cmp_exact(fd_cmp);
 
 				if (!ret) {
 					err = -1;
@@ -1018,7 +1024,7 @@ static inline int test_run_parent(const struct test *t, int fdout[2], int fderr[
 	if (t->skip) {
 		LOG("%sSKIPPED%s: %s\n", ANSI_HIGHLIGHT_YELLOW_ON, ANSI_HIGHLIGHT_OFF,
 		    t->name);
-		err = EXIT_SUCCESS;
+		err = 77;
 		goto exit;
 	}
 
@@ -1149,8 +1155,8 @@ int test_run(const struct test *t)
 	int fderr[2];
 	int fdmonitor[2];
 
-	if (t->need_spawn && oneshot)
-		test_run_spawned(t);
+	if (oneshot)
+		return test_run_spawned(t);
 
 	if (t->output.out != NULL) {
 		if (pipe(fdout) != 0) {
@@ -1188,5 +1194,5 @@ int test_run(const struct test *t)
 	if (pid > 0)
 		return test_run_parent(t, fdout, fderr, fdmonitor, pid);
 
-	return test_run_child(t, fdout, fderr, fdmonitor);
+	exit(test_run_child(t, fdout, fderr, fdmonitor));
 }

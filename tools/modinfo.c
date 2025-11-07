@@ -22,7 +22,7 @@
 #include "kmod.h"
 
 static char separator = '\n';
-static const char *field = NULL;
+static const char *field;
 
 struct param {
 	struct param *next;
@@ -34,15 +34,13 @@ struct param {
 	int typelen;
 };
 
-static struct param *add_param(const char *name, size_t namelen, const char *param,
-			       size_t paramlen, const char *type, size_t typelen,
-			       struct param **list)
+static int add_param(const char *name, size_t namelen, const char *param, size_t paramlen,
+		     const char *type, size_t typelen, struct param **list)
 {
 	struct param *it;
 
 	if (namelen > INT_MAX || paramlen > INT_MAX || typelen > INT_MAX) {
-		errno = EINVAL;
-		return NULL;
+		return -EINVAL;
 	}
 
 	for (it = *list; it != NULL; it = it->next) {
@@ -53,7 +51,7 @@ static struct param *add_param(const char *name, size_t namelen, const char *par
 	if (it == NULL) {
 		it = malloc(sizeof(struct param));
 		if (it == NULL)
-			return NULL;
+			return -ENOMEM;
 		it->next = *list;
 		*list = it;
 		it->name = name;
@@ -74,15 +72,16 @@ static struct param *add_param(const char *name, size_t namelen, const char *par
 		it->typelen = typelen;
 	}
 
-	return it;
+	return 0;
 }
 
 static int process_parm(const char *key, const char *value, struct param **params)
 {
 	const char *name, *param, *type;
 	size_t namelen, paramlen, typelen;
-	struct param *it;
 	const char *colon = strchr(value, ':');
+	int ret;
+
 	if (colon == NULL) {
 		ERR("Found invalid \"%s=%s\": missing ':'\n", key, value);
 		return 0;
@@ -102,9 +101,9 @@ static int process_parm(const char *key, const char *value, struct param **param
 		typelen = strlen(type);
 	}
 
-	it = add_param(name, namelen, param, paramlen, type, typelen, params);
-	if (it == NULL) {
-		ERR("Unable to add parameter: %m\n");
+	ret = add_param(name, namelen, param, paramlen, type, typelen, params);
+	if (ret < 0) {
+		ERR("Unable to add parameter: %s\n", strerror(-ret));
 		return -ENOMEM;
 	}
 
@@ -201,32 +200,24 @@ static int modinfo_do(struct kmod_module *mod)
 	kmod_list_foreach(l, list) {
 		const char *key = kmod_module_info_get_key(l);
 		const char *value = kmod_module_info_get_value(l);
-		size_t keylen;
 
 		if (field != NULL) {
-			if (!streq(field, key))
-				continue;
-			/* filtered output contains no key, just value */
-			printf("%s%c", value, separator);
-			continue;
-		}
-
-		if (streq(key, "parm") || streq(key, "parmtype")) {
+			if (streq(field, key)) {
+				/* filtered output contains no key, just value */
+				printf("%s%c", value, separator);
+			}
+		} else if (streq(key, "parm") || streq(key, "parmtype")) {
 			err = process_parm(key, value, &params);
 			if (err < 0)
 				goto end;
-			continue;
-		}
-
-		if (separator == '\0') {
+		} else if (separator == '\0') {
 			printf("%s=%s%c", key, value, separator);
-			continue;
+		} else {
+			size_t keylen = strlen(key);
+			if (keylen > 15)
+				keylen = 15;
+			printf("%s:%-*s%s%c", key, 15 - (int)keylen, "", value, separator);
 		}
-
-		keylen = strlen(key);
-		if (keylen > 15)
-			keylen = 15;
-		printf("%s:%-*s%s%c", key, 15 - (int)keylen, "", value, separator);
 	}
 
 	if (field != NULL)
@@ -344,9 +335,9 @@ static void help(void)
 	       "\t-n, --filename              Print only 'filename'\n"
 	       "\t-0, --null                  Use \\0 instead of \\n\n"
 	       "\t-m, --modname               Handle argument as module name instead of alias or filename\n"
-	       "\t-F, --field=FIELD           Print only provided FIELD\n"
-	       "\t-k, --set-version=VERSION   Use VERSION instead of `uname -r`\n"
-	       "\t-b, --basedir=DIR           Use DIR as filesystem root for " MODULE_DIRECTORY
+	       "\t-F, --field FIELD           Print only provided FIELD\n"
+	       "\t-k, --set-version VERSION   Use VERSION instead of `uname -r`\n"
+	       "\t-b, --basedir DIR           Use DIR as filesystem root for " MODULE_DIRECTORY
 	       "\n"
 	       "\t-V, --version               Show version\n"
 	       "\t-h, --help                  Show this help\n",

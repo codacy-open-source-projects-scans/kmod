@@ -3,7 +3,6 @@
  * Copyright (C) 2012-2013  ProFUSION embedded systems
  */
 
-#include <errno.h>
 #include <inttypes.h>
 #include <stddef.h>
 #include <stdio.h>
@@ -15,7 +14,7 @@
 
 #include "testsuite.h"
 
-static int loaded_1(const struct test *t)
+static int loaded_1(void)
 {
 	struct kmod_ctx *ctx;
 	const char *null_config = NULL;
@@ -24,13 +23,13 @@ static int loaded_1(const struct test *t)
 
 	ctx = kmod_new(NULL, &null_config);
 	if (ctx == NULL)
-		exit(EXIT_FAILURE);
+		return EXIT_FAILURE;
 
 	err = kmod_module_new_from_loaded(ctx, &list);
 	if (err < 0) {
 		fprintf(stderr, "%s\n", strerror(-err));
 		kmod_unref(ctx);
-		exit(EXIT_FAILURE);
+		return EXIT_FAILURE;
 	}
 
 	printf("Module                  Size  Used by\n");
@@ -71,7 +70,6 @@ DEFINE_TEST(loaded_1,
 	.config = {
 		[TC_ROOTFS] = TESTSUITE_ROOTFS "test-loaded/",
 	},
-	.need_spawn = true,
 	.output = {
 		.out = TESTSUITE_ROOTFS "test-loaded/correct.txt",
 	});

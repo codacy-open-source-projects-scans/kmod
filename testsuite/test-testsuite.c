@@ -21,31 +21,29 @@
 #include "testsuite.h"
 
 #define TEST_UNAME "4.0.20-kmod"
-static noreturn int testsuite_uname(const struct test *t)
+static int testsuite_uname(void)
 {
 	struct utsname u;
 	int err = uname(&u);
 
 	if (err < 0)
-		exit(EXIT_FAILURE);
+		return EXIT_FAILURE;
 
 	if (!streq(u.release, TEST_UNAME)) {
 		const char *ldpreload = getenv("LD_PRELOAD");
 		ERR("u.release=%s should be %s\n", u.release, TEST_UNAME);
 		ERR("LD_PRELOAD=%s\n", ldpreload);
-		exit(EXIT_FAILURE);
+		return EXIT_FAILURE;
 	}
 
-	exit(EXIT_SUCCESS);
+	return EXIT_SUCCESS;
 }
-DEFINE_TEST(testsuite_uname,
-	.description = "test if trap to uname() works",
-	.config = {
-		[TC_UNAME_R] = TEST_UNAME,
-	},
-	.need_spawn = true);
+DEFINE_TEST(testsuite_uname, .description = "test if trap to uname() works",
+	    .config = {
+		    [TC_UNAME_R] = TEST_UNAME,
+	    });
 
-static int testsuite_rootfs_fopen(const struct test *t)
+static int testsuite_rootfs_fopen(void)
 {
 	FILE *fp;
 	char s[100];
@@ -64,14 +62,12 @@ static int testsuite_rootfs_fopen(const struct test *t)
 
 	return EXIT_SUCCESS;
 }
-DEFINE_TEST(testsuite_rootfs_fopen,
-	.description = "test if rootfs works - fopen()",
-	.config = {
-		[TC_ROOTFS] = TESTSUITE_ROOTFS "test-rootfs/",
-	},
-	.need_spawn = true);
+DEFINE_TEST(testsuite_rootfs_fopen, .description = "test if rootfs works - fopen()",
+	    .config = {
+		    [TC_ROOTFS] = TESTSUITE_ROOTFS "test-rootfs/",
+	    });
 
-static int testsuite_rootfs_open(const struct test *t)
+static int testsuite_rootfs_open(void)
 {
 	char buf[100];
 	int fd, done;
@@ -97,14 +93,12 @@ static int testsuite_rootfs_open(const struct test *t)
 
 	return EXIT_SUCCESS;
 }
-DEFINE_TEST(testsuite_rootfs_open,
-	.description = "test if rootfs works - open()",
-	.config = {
-		[TC_ROOTFS] = TESTSUITE_ROOTFS "test-rootfs/",
-	},
-	.need_spawn = true);
+DEFINE_TEST(testsuite_rootfs_open, .description = "test if rootfs works - open()",
+	    .config = {
+		    [TC_ROOTFS] = TESTSUITE_ROOTFS "test-rootfs/",
+	    });
 
-static int testsuite_rootfs_stat(const struct test *t)
+static int testsuite_rootfs_stat(void)
 {
 	struct stat st;
 
@@ -115,14 +109,12 @@ static int testsuite_rootfs_stat(const struct test *t)
 
 	return EXIT_SUCCESS;
 }
-DEFINE_TEST(testsuite_rootfs_stat,
-	.description = "test if rootfs works - stat()",
-	.config = {
-		[TC_ROOTFS] = TESTSUITE_ROOTFS "test-rootfs/",
-	},
-	.need_spawn = true);
+DEFINE_TEST(testsuite_rootfs_stat, .description = "test if rootfs works - stat()",
+	    .config = {
+		    [TC_ROOTFS] = TESTSUITE_ROOTFS "test-rootfs/",
+	    });
 
-static int testsuite_rootfs_opendir(const struct test *t)
+static int testsuite_rootfs_opendir(void)
 {
 	DIR *d;
 
@@ -135,11 +127,9 @@ static int testsuite_rootfs_opendir(const struct test *t)
 	closedir(d);
 	return EXIT_SUCCESS;
 }
-DEFINE_TEST(testsuite_rootfs_opendir,
-	.description = "test if rootfs works - opendir()",
-	.config = {
-		[TC_ROOTFS] = TESTSUITE_ROOTFS "test-rootfs/",
-	},
-	.need_spawn = true);
+DEFINE_TEST(testsuite_rootfs_opendir, .description = "test if rootfs works - opendir()",
+	    .config = {
+		    [TC_ROOTFS] = TESTSUITE_ROOTFS "test-rootfs/",
+	    });
 
 TESTSUITE_MAIN();

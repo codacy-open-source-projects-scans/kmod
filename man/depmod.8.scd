@@ -6,7 +6,7 @@ depmod - Generate modules.dep and map files.
 
 # SYNOPSIS
 
-*depmod* [*-b* _basedir_] [*-m* _moduledir_] [*-o* _outdir_][*-o* _outdir_] [*-e*] [*-E* _Module.symvers_]
+*depmod* [*-b* _basedir_] [*-m* _moduledir_] [*-o* _outdir_] [*-e*] [*-E* _Module.symvers_]
 \ \ \ \ \ \ \ \[*-F* _System.map_] [*-n*] [*-v*] [*-A*] [*-P* _prefix_] [*-w*] [_version_]
 
 *depmod* [*-e*] [*-E* _Module.symvers_] [*-F* _System.map_] [*-n*] [*-v*] [*-P* _prefix_]
@@ -20,17 +20,17 @@ uses this symbol, that second module clearly depends on the first module. These
 dependencies can get quite complex.
 
 *depmod* creates a list of module dependencies by reading each module under
-<BASEDIR>/<MODULEDIR>/_version_. By default <MODULE_DIRECTORY> is
-@MODULE_DIRECTORY@ and <BASEDIR> is empty. See options below to override when
-needed. It determines what symbols each module exports and needs.  This list is
-written to *modules.dep*, and a binary hashed version named modules.dep.bin, in
-the same directory. If filenames are given on the command line, only those
-modules are examined (which is rarely useful unless all modules are listed).
-*depmod* also creates a list of symbols provided by modules in the file named
-modules.symbols and its binary hashed version, modules.symbols.bin. Finally,
-*depmod* will output a file named modules.devname if modules supply special
-device names (devname) that should be populated in /dev on boot (by a utility
-such as systemd-tmpfiles).
+<BASEDIR>/<MODULEDIR>/_version_. By default <MODULEDIR> is @MODULE_DIRECTORY@
+and <BASEDIR> is empty. See options below to override when needed. It determines
+what symbols each module exports and needs.  This list is written to
+*modules.dep*, and a binary hashed version named modules.dep.bin, in the same
+directory. If filenames are given on the command line, only those modules are
+examined (which is rarely useful unless all modules are listed). *depmod* also
+creates a list of symbols provided by modules in the file named modules.symbols
+and its binary hashed version, modules.symbols.bin. Finally, *depmod* will
+output a file named modules.devname if modules supply special device names
+(devname) that should be populated in /dev on boot (by a utility such as
+systemd-tmpfiles).
 
 If a _version_ is provided, then that kernel version's module directory is used
 rather than the current kernel version (as returned by *uname -r*).
@@ -56,6 +56,9 @@ rather than the current kernel version (as returned by *uname -r*).
 	distribution vendor who needs to pre-generate the meta-data files rather
 	than running *depmod* again later.
 
+	If a relative path is given, it's relative to the current working
+	directory.
+
 	Example:
 		depmod -b /my/build/staging/dir/
 
@@ -69,12 +72,26 @@ rather than the current kernel version (as returned by *uname -r*).
 	building *modules.dep* file in _basedir_ for a system that uses a
 	different prefix, e.g. _/usr/lib/modules_ vs _/lib/modules_.
 
-	Example:
-		depmod -b /tmp/build -m /kernel-modules
+	Relative and absolute paths are accepted, but they are always relative
+	to the _basedir_.
+
+	Examples:
+		depmod -b /tmp/build -m /kernel-modules++
+depmod -b /tmp/build -m kernel-modules
 
 	This expects all input files under
 	_/tmp/build/kernel-modules/$(uname -r)_ and generates index files under
 	that same directory.
+
+	Without an accompanying *-b* argument, the moduledir is relative to _/_.
+	Example:
+
+		depmod -m foo/bar
+
+	This expects all input files under _/foo/bar/$(uname -r)_ and generates
+	index files under the same directory. Unless libkmod is prepared to
+	handle that arbitrary location, it won't work in runtime.
+
 
 *-o* _outdir_, *--outdir* _outdir_
 	Set the output directory where *depmod* will store any generated file.
@@ -82,6 +99,9 @@ rather than the current kernel version (as returned by *uname -r*).
 	used. Also this setting takes precedence and if used together with
 	_basedir_ it will result in the input being that directory, but the output
 	being the one set by _outdir_.
+
+	If a relative path is given, it's relative to the current working
+	directory.
 
 	Example:
 		depmod -o /my/build/staging/dir/

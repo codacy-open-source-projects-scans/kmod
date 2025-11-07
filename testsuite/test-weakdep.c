@@ -3,7 +3,6 @@
  * Copyright Red Hat
  */
 
-#include <errno.h>
 #include <inttypes.h>
 #include <stddef.h>
 #include <stdio.h>
@@ -15,43 +14,31 @@
 
 #include "testsuite.h"
 
-#define TEST_WEAKDEP_ROOTFS TESTSUITE_ROOTFS "test-weakdep/"
-#define TEST_WEAKDEP_KERNEL_DIR TEST_WEAKDEP_ROOTFS MODULE_DIRECTORY "/4.4.4/"
-
-static const char *const test_weakdep_config_paths[] = {
-	TEST_WEAKDEP_ROOTFS SYSCONFDIR "/modprobe.d",
-	NULL,
-};
-
-static const char *const mod_name[] = {
-	"mod-loop-b",
-	"mod-weakdep",
-	NULL,
-};
-
-static int test_weakdep(const struct test *t)
+static int test_weakdep(void)
 {
+	static const char *const mod_name[] = {
+		"mod-loop-b",
+		"mod-weakdep",
+	};
 	struct kmod_ctx *ctx;
-	int mod_name_index = 0;
 	int err;
 
-	ctx = kmod_new(TEST_WEAKDEP_KERNEL_DIR, test_weakdep_config_paths);
+	ctx = kmod_new(NULL, NULL);
 	if (ctx == NULL)
-		exit(EXIT_FAILURE);
+		return EXIT_FAILURE;
 
-	while (mod_name[mod_name_index]) {
+	for (size_t i = 0; i < ARRAY_SIZE(mod_name); i++) {
 		struct kmod_list *list = NULL;
 		struct kmod_module *mod = NULL;
 		struct kmod_list *mod_list = NULL;
 		struct kmod_list *itr = NULL;
 
-		printf("%s:", mod_name[mod_name_index]);
-		err = kmod_module_new_from_lookup(ctx, mod_name[mod_name_index], &list);
+		printf("%s:", mod_name[i]);
+		err = kmod_module_new_from_lookup(ctx, mod_name[i], &list);
 		if (list == NULL || err < 0) {
 			fprintf(stderr, "module %s not found in directory %s\n",
-				mod_name[mod_name_index],
-				ctx ? kmod_get_dirname(ctx) : "(missing)");
-			exit(EXIT_FAILURE);
+				mod_name[i], ctx ? kmod_get_dirname(ctx) : "(missing)");
+			return EXIT_FAILURE;
 		}
 
 		mod = kmod_module_get_module(list);
@@ -59,8 +46,8 @@ static int test_weakdep(const struct test *t)
 		err = kmod_module_get_weakdeps(mod, &mod_list);
 		if (err) {
 			fprintf(stderr, "weak dependencies can not be read for %s (%d)\n",
-				mod_name[mod_name_index], err);
-			exit(EXIT_FAILURE);
+				mod_name[i], err);
+			return EXIT_FAILURE;
 		}
 
 		kmod_list_foreach(itr, mod_list) {
@@ -75,8 +62,6 @@ static int test_weakdep(const struct test *t)
 		kmod_module_unref_list(mod_list);
 		kmod_module_unref(mod);
 		kmod_module_unref_list(list);
-
-		mod_name_index++;
 	}
 
 	kmod_unref(ctx);
@@ -84,15 +69,28 @@ static int test_weakdep(const struct test *t)
 	return EXIT_SUCCESS;
 }
 DEFINE_TEST(test_weakdep,
-	.description = "check if modprobe breaks weakdep",
+	.description = "check if libkmod breaks weakdep",
 	.config = {
 		[TC_UNAME_R] = "4.4.4",
 		[TC_ROOTFS] = TESTSUITE_ROOTFS "test-weakdep",
 		[TC_INIT_MODULE_RETCODES] = "",
 	},
-	.need_spawn = true,
 	.output = {
 		.out = TESTSUITE_ROOTFS "test-weakdep/correct-weakdep.txt",
+	});
+
+static int modprobe_config(void)
+{
+	return EXEC_TOOL(modprobe, "-c");
+}
+DEFINE_TEST(modprobe_config,
+	.description = "check modprobe config parsing with weakdep",
+	.config = {
+		[TC_UNAME_R] = "4.4.4",
+		[TC_ROOTFS] = TESTSUITE_ROOTFS "test-weakdep",
+	},
+	.output = {
+		.out = TESTSUITE_ROOTFS "test-weakdep/modprobe-c.txt",
 	});
 
 TESTSUITE_MAIN();

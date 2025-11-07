@@ -13,7 +13,7 @@ modprobe - Add and remove modules from the Linux Kernel
 
 *modprobe* [*-c*]
 
-*modprobe* [*--dump-modversions*] [_filename_]
+*modprobe* [*--show-modversions*] [_filename_]
 
 # DESCRIPTION
 
@@ -61,13 +61,24 @@ database.
 	This option is passed through *install* or *remove* commands to other
 	*modprobe* commands in the MODPROBE_OPTIONS environment variable.
 
-*-c*, *--showconfig*
-	Dump out the effective configuration from the config directory and exit.
+*-c*, *--show-config*
+	Print out the effective configuration from the config directory and exit.
 
-*--dump-modversions*
+	For compatibility reasons *--showconfig* is also accepted for this option
+	but will be removed after kmod 36.
+
+*--show-modversions*
 	Print out a list of module versioning information required by a module.
 	This option is commonly used by distributions in order to package up a
 	Linux kernel module using module versioning deps.
+
+	For compatibility reasons *--dump-modversions* is also accepted for this
+	option but will be removed after kmod 36.
+
+*--show-exports*
+	Print out a list of symbols exported by the module. This option is
+	commonly used to inspect the function list, while investigating loading
+	of modules with partial or missing dependencies.
 
 *-d*, *--dirname*
 	Root directory for modules, / by default.
@@ -122,11 +133,13 @@ database.
 	the request was more specifically made with only one or other (and not
 	both) of *--ignore-install* or *--ignore-remove*. See *modprobe.d*(5).
 
-*-n*, *--dry-run*, *--show*
+*-n*, *--dry-run*
 	This option does everything but actually insert or delete the modules
 	(or run the install or remove commands). Combined with *-v*, it is
-	useful for debugging problems. For historical reasons both *--dry-run*
-	and *--show* actually mean the same thing and are interchangeable.
+	useful for debugging problems.
+
+	For compatibility reasons *--show* is also accepted for this option but
+	will be removed after kmod 36.
 
 *-q*, *--quiet*
 	With this flag, *modprobe* won't print an error message if you try to
@@ -135,11 +148,14 @@ database.
 	exit status. The kernel uses this to opportunistically probe for modules
 	which might exist using request_module.
 
-*-R*, *--resolve-alias*
+*-R*, *--show-alias*
 	Print all module names matching an alias. This can be useful for
 	debugging module alias problems.
 
-***-r*, *--remove*
+	For compatibility reasons *--resolve-alias* is also accepted for this
+	option but will be removed after kmod 36.
+
+*-r*, *--remove*
 	This option causes *modprobe* to remove rather than insert a module. If
 	the modules it depends on are also unused, *modprobe* will try to remove
 	them too. Unlike insertion, more than one module can be specified on the
@@ -149,6 +165,14 @@ database.
 	There is usually no reason to remove modules, but some buggy modules
 	require it. Your distribution kernel may not have been built to support
 	removal of modules at all.
+
+*--remove-holders*
+	This option causes *modprobe* to remove the mentioned module(s), alongside
+	other modules that depend on it/them - aka the reverse dependency list.
+	This options implies --remove.
+
+	For compatibility reasons *--remove-dependencies* is also accepted for
+	this option but will be removed after kmod 36.
 
 *-w* _TIMEOUT_MSEC_, *--wait* _TIMEOUT_MSEC_
 	This option causes *modprobe -r *to continue trying to remove a module

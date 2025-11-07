@@ -7,6 +7,7 @@
 
 #include <assert.h>
 #include <ctype.h>
+#include <dlfcn.h>
 #include <errno.h>
 #include <stdarg.h>
 #include <stddef.h>
@@ -25,15 +26,15 @@ static const struct kmod_ext {
 	const char *ext;
 	size_t len;
 } kmod_exts[] = {
-	{ KMOD_EXTENSION_UNCOMPRESSED, sizeof(KMOD_EXTENSION_UNCOMPRESSED) - 1 },
-#ifdef ENABLE_ZLIB
-	{ ".ko.gz", sizeof(".ko.gz") - 1 },
+	{ KMOD_EXTENSION_UNCOMPRESSED, strlen(KMOD_EXTENSION_UNCOMPRESSED) },
+#if ENABLE_ZLIB
+	{ ".ko.gz", strlen(".ko.gz") },
 #endif
-#ifdef ENABLE_XZ
-	{ ".ko.xz", sizeof(".ko.xz") - 1 },
+#if ENABLE_XZ
+	{ ".ko.xz", strlen(".ko.xz") },
 #endif
-#ifdef ENABLE_ZSTD
-	{ ".ko.zst", sizeof(".ko.zst") - 1 },
+#if ENABLE_ZSTD
+	{ ".ko.zst", strlen(".ko.zst") },
 #endif
 	{},
 };
@@ -275,7 +276,7 @@ int read_str_long(int fd, long *value, int base)
 		return err;
 	errno = 0;
 	v = strtol(buf, &end, base);
-	if (end == buf || !isspace(*end))
+	if (end == buf || !isspace(*end) || errno == ERANGE)
 		return -EINVAL;
 
 	*value = v;
@@ -294,7 +295,7 @@ int read_str_ulong(int fd, unsigned long *value, int base)
 		return err;
 	errno = 0;
 	v = strtoul(buf, &end, base);
-	if (end == buf || !isspace(*end))
+	if (end == buf || !isspace(*end) || errno == ERANGE)
 		return -EINVAL;
 	*value = v;
 	return 0;
@@ -332,11 +333,12 @@ char *freadline_wrapped(FILE *fp, unsigned int *linenum)
 			n++;
 
 			{
-				char *ret = buf;
+				char *ret = TAKE_PTR(buf);
+
 				ret[i] = '\0';
-				buf = NULL;
 				if (linenum)
 					*linenum += n;
+
 				return ret;
 			}
 
@@ -369,13 +371,6 @@ char *freadline_wrapped(FILE *fp, unsigned int *linenum)
 /* path handling functions                                                  */
 /* ************************************************************************ */
 
-static bool path_is_absolute(const char *p)
-{
-	assert(p != NULL);
-
-	return p[0] == '/';
-}
-
 char *path_make_absolute_cwd(const char *p)
 {
 	_cleanup_free_ char *cwd = NULL;
@@ -397,7 +392,8 @@ char *path_make_absolute_cwd(const char *p)
 	if (r == NULL)
 		return NULL;
 
-	cwd = NULL;
+	TAKE_PTR(cwd);
+
 	r[cwdlen] = '/';
 	memcpy(&r[cwdlen + 1], p, plen + 1);
 
@@ -419,7 +415,7 @@ int mkdir_p(const char *path, int len, mode_t mode)
 	_cleanup_free_ char *start;
 	char *end;
 
-	start = memdup(path, len + 1);
+	_clang_suppress_alloc_ start = memdup(path, len + 1);
 	if (!start)
 		return -ENOMEM;
 
@@ -480,7 +476,28 @@ int mkdir_parents(const char *path, mode_t mode)
 	return mkdir_p(path, end - path, mode);
 }
 
-static unsigned long long ts_usec(const struct timespec *ts)
+int fd_lookup_path(int fd, char *path, size_t pathlen)
+{
+	char proc_path[PATH_MAX];
+	ssize_t len;
+
+	snprintf(proc_path, sizeof(proc_path), "/proc/self/fd/%d", fd);
+
+	/*
+	 * We are using mkstemp to create a temporary file. We need to read the link since
+	 * the mkstemp creates file with an absolute path
+	 */
+	len = readlink(proc_path, path, pathlen - 1);
+	if (len < 0)
+		return (int)len;
+
+	/* readlink(3), may null-terminate but should not be relied upon */
+	path[len] = '\0';
+
+	return len;
+}
+
+unsigned long long ts_usec(const struct timespec *ts)
 {
 	return (unsigned long long)ts->tv_sec * USEC_PER_SEC +
 	       (unsigned long long)ts->tv_nsec / NSEC_PER_USEC;
@@ -516,25 +533,37 @@ int sleep_until_msec(unsigned long long msec)
 /*
  * Exponential retry backoff with tail
  */
-unsigned long long get_backoff_delta_msec(unsigned long long t0, unsigned long long tend,
+unsigned long long get_backoff_delta_msec(unsigned long long tend,
 					  unsigned long long *delta)
 {
-	unsigned long long t;
+	unsigned long long d, t;
 
+	d = *delta;
 	t = now_msec();
 
-	if (!*delta)
-		*delta = 1;
-	else
-		*delta <<= 1;
+	if (tend <= t) {
+		/* Timeout already reached */
+		d = 0;
+	} else {
+		const unsigned long long limit = tend - t;
 
-	while (t + *delta > tend)
-		*delta >>= 1;
+		/* Double the amount of requested delta, if possible */
+		if (!d)
+			d = 1;
+		else if (umulll_overflow(d, 2, &d))
+			d = ULLONG_MAX;
 
-	if (!*delta && tend > t)
-		*delta = tend - t;
+		/* Search for a fitting backoff delta */
+		while (d > limit)
+			d >>= 1;
 
-	return t + *delta;
+		/* If none found, use maximum wait time */
+		if (!d)
+			d = limit;
+	}
+
+	*delta = d;
+	return t + d;
 }
 
 unsigned long long now_usec(void)
@@ -559,9 +588,48 @@ unsigned long long now_msec(void)
 
 unsigned long long stat_mstamp(const struct stat *st)
 {
-#ifdef HAVE_STRUCT_STAT_ST_MTIM
 	return ts_usec(&st->st_mtim);
-#else
-	return (unsigned long long)st->st_mtime;
-#endif
+}
+
+static int dlsym_manyv(void *dl, va_list ap)
+{
+	void (**fn)(void);
+
+	while ((fn = va_arg(ap, typeof(fn)))) {
+		const char *symbol;
+
+		symbol = va_arg(ap, typeof(symbol));
+		*fn = dlsym(dl, symbol);
+		if (!*fn)
+			return -ENXIO;
+	}
+
+	return 0;
+}
+
+int dlsym_many(void **dlp, const char *filename, ...)
+{
+	va_list ap;
+	void *dl;
+	int r;
+
+	if (*dlp)
+		return 0;
+
+	dl = dlopen(filename, RTLD_LAZY);
+	if (!dl)
+		return -ENOENT;
+
+	va_start(ap, filename);
+	r = dlsym_manyv(dl, ap);
+	va_end(ap);
+
+	if (r < 0) {
+		dlclose(dl);
+		return r;
+	}
+
+	*dlp = dl;
+
+	return 1;
 }

@@ -33,48 +33,33 @@ struct kmod_builtin_info {
 	char *buf;
 };
 
-static bool kmod_builtin_info_init(struct kmod_builtin_info *info, struct kmod_ctx *ctx)
+static int kmod_builtin_info_init(struct kmod_builtin_info *info, struct kmod_ctx *ctx)
 {
 	char path[PATH_MAX];
 	FILE *fp = NULL;
 	const char *dirname = kmod_get_dirname(ctx);
 	size_t len = strlen(dirname);
 
-	if ((len + 1 + strlen(MODULES_BUILTIN_MODINFO) + 1) >= PATH_MAX) {
-		errno = ENAMETOOLONG;
-		return false;
-	}
-	snprintf(path, PATH_MAX, "%s/" MODULES_BUILTIN_MODINFO, dirname);
+	if ((len + 1 + strlen(MODULES_BUILTIN_MODINFO) + 1) >= sizeof(path))
+		return -ENAMETOOLONG;
+	snprintf(path, sizeof(path), "%s/" MODULES_BUILTIN_MODINFO, dirname);
 
 	fp = fopen(path, "r");
 	if (fp == NULL)
-		return false;
+		return -errno;
 
 	info->ctx = ctx;
 	info->fp = fp;
 	info->bufsz = 0;
 	info->buf = NULL;
 
-	return true;
+	return 0;
 }
 
 static void kmod_builtin_info_release(struct kmod_builtin_info *info)
 {
 	free(info->buf);
 	fclose(info->fp);
-}
-
-static ssize_t get_string(struct kmod_builtin_info *info)
-{
-	ssize_t len;
-
-	len = getdelim(&info->buf, &info->bufsz, '\0', info->fp);
-	if (len > 0 && info->buf[len] != '\0') {
-		errno = EINVAL;
-		len = -1;
-	}
-
-	return len;
 }
 
 static ssize_t get_strings(struct kmod_builtin_info *info, const char *modname,
@@ -86,11 +71,11 @@ static ssize_t get_strings(struct kmod_builtin_info *info, const char *modname,
 	for (count = 0; count < INTPTR_MAX;) {
 		char *dot, *line;
 
-		n = get_string(info);
+		n = getdelim(&info->buf, &info->bufsz, '\0', info->fp);
 		if (n == -1) {
 			if (!feof(info->fp)) {
 				count = -errno;
-				ERR(info->ctx, "get_string: %s\n", strerror(errno));
+				ERR(info->ctx, "get_strings: %m\n");
 			}
 			break;
 		}
@@ -114,7 +99,7 @@ static ssize_t get_strings(struct kmod_builtin_info *info, const char *modname,
 			break;
 		}
 		if (!strbuf_pushchars(buf, dot + 1) || !strbuf_pushchar(buf, '\0')) {
-			count = -errno;
+			count = -ENOMEM;
 			ERR(info->ctx, "get_strings: "
 				       "failed to append modinfo string\n");
 			return count;
@@ -139,20 +124,19 @@ static char **strbuf_to_vector(struct strbuf *buf, size_t count)
 	char *s;
 	size_t n;
 
-	/* (string vector + NULL) * sizeof(char *) + buf->used */
+	/* (string vector + NULL) * sizeof(char *) + strbuf_used() */
 	if (uaddsz_overflow(count, 1, &n) ||
 	    umulsz_overflow(sizeof(char *), n, &vec_size) ||
-	    uaddsz_overflow(buf->used, vec_size, &total_size)) {
-		errno = ENOMEM;
+	    uaddsz_overflow(strbuf_used(buf), vec_size, &total_size))
 		return NULL;
-	}
 
 	vector = realloc(buf->bytes, total_size);
 	if (vector == NULL)
 		return NULL;
-	buf->bytes = NULL;
-	memmove(vector + count + 1, vector, buf->used);
+
+	memmove(vector + count + 1, vector, strbuf_used(buf));
 	s = (char *)(vector + count + 1);
+	strbuf_init(buf);
 
 	for (n = 0; n < count; n++) {
 		vector[n] = s;
@@ -167,13 +151,14 @@ static char **strbuf_to_vector(struct strbuf *buf, size_t count)
 ssize_t kmod_builtin_get_modinfo(struct kmod_ctx *ctx, const char *modname,
 				 char ***modinfo)
 {
+	DECLARE_STRBUF(buf);
 	struct kmod_builtin_info info;
-	struct strbuf buf;
 	ssize_t count;
+	int ret;
 
-	if (!kmod_builtin_info_init(&info, ctx))
-		return -errno;
-	strbuf_init(&buf);
+	ret = kmod_builtin_info_init(&info, ctx);
+	if (ret < 0)
+		return ret;
 
 	count = get_strings(&info, modname, &buf);
 	if (count == 0)
@@ -181,9 +166,8 @@ ssize_t kmod_builtin_get_modinfo(struct kmod_ctx *ctx, const char *modname,
 	else if (count > 0) {
 		*modinfo = strbuf_to_vector(&buf, (size_t)count);
 		if (*modinfo == NULL) {
-			count = -errno;
-			ERR(ctx, "strbuf_to_vector: %s\n", strerror(errno));
-			strbuf_release(&buf);
+			count = -ENOMEM;
+			ERR(ctx, "strbuf_to_vector: %s\n", strerror(ENOMEM));
 		}
 	}
 

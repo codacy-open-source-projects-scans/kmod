@@ -1,5 +1,3 @@
-#define pr_fmt(fmt) KBUILD_MODNAME ": " fmt
-
 #include <linux/init.h>
 #include <linux/module.h>
 #include <linux/printk.h>
@@ -20,3 +18,4 @@ EXPORT_SYMBOL(print_fooC);
 
 MODULE_AUTHOR("Lucas De Marchi <lucas.demarchi@intel.com>");
 MODULE_LICENSE("LGPL");
+MODULE_DESCRIPTION("dummy test module");

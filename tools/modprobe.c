@@ -28,35 +28,35 @@
 #include "kmod.h"
 
 static int log_priority = LOG_CRIT;
-static int use_syslog = 0;
 #define LOG(...) log_printf(log_priority, __VA_ARGS__)
 
 #define DEFAULT_VERBOSE LOG_WARNING
 static int verbose = DEFAULT_VERBOSE;
-static int do_show = 0;
-static int dry_run = 0;
-static int ignore_loaded = 0;
-static int lookup_only = 0;
-static int first_time = 0;
-static int ignore_commands = 0;
-static int use_blacklist = 0;
-static int force = 0;
-static int strip_modversion = 0;
-static int strip_vermagic = 0;
-static int remove_holders = 0;
-static unsigned long long wait_msec = 0;
-static int quiet_inuse = 0;
+static int do_show;
+static int dry_run;
+static int ignore_loaded;
+static int lookup_only;
+static int first_time;
+static int ignore_commands;
+static int use_blacklist;
+static int force;
+static int strip_modversion;
+static int strip_vermagic;
+static int remove_holders;
+static unsigned long long wait_msec;
+static int quiet_inuse;
 
 static const char cmdopts_s[] = "arw:RibfDcnC:d:S:sqvVh";
 static const struct option cmdopts[] = {
 	{ "all", no_argument, 0, 'a' },
 
 	{ "remove", no_argument, 0, 'r' },
-	{ "remove-dependencies", no_argument, 0, 5 },
+	{ "remove-dependencies", no_argument, 0, 7 },
 	{ "remove-holders", no_argument, 0, 5 },
 	{ "wait", required_argument, 0, 'w' },
 
-	{ "resolve-alias", no_argument, 0, 'R' },
+	{ "resolve-alias", no_argument, 0, 8 },
+	{ "show-alias", no_argument, 0, 'R' },
 	{ "first-time", no_argument, 0, 3 },
 	{ "ignore-install", no_argument, 0, 'i' },
 	{ "ignore-remove", no_argument, 0, 'i' },
@@ -66,14 +66,14 @@ static const struct option cmdopts[] = {
 	{ "force-vermagic", no_argument, 0, 1 },
 
 	{ "show-depends", no_argument, 0, 'D' },
-	{ "showconfig", no_argument, 0, 'c' },
+	{ "showconfig", no_argument, 0, 9 },
 	{ "show-config", no_argument, 0, 'c' },
 	{ "show-modversions", no_argument, 0, 4 },
-	{ "dump-modversions", no_argument, 0, 4 },
+	{ "dump-modversions", no_argument, 0, 10 },
 	{ "show-exports", no_argument, 0, 6 },
 
 	{ "dry-run", no_argument, 0, 'n' },
-	{ "show", no_argument, 0, 'n' },
+	{ "show", no_argument, 0, 11 },
 
 	{ "config", required_argument, 0, 'C' },
 	{ "dirname", required_argument, 0, 'd' },
@@ -95,15 +95,14 @@ static void help(void)
 	       "\t%s [options] -r [-i] modulename\n"
 	       "\t%s [options] -r -a [-i] modulename [modulename...]\n"
 	       "\t%s [options] -c\n"
-	       "\t%s [options] --dump-modversions filename\n"
+	       "\t%s [options] --show-modversions filename\n"
 	       "Management Options:\n"
 	       "\t-a, --all                   Consider every non-argument to\n"
 	       "\t                            be a module name to be inserted\n"
 	       "\t                            or removed (-r)\n"
 	       "\t-r, --remove                Remove modules instead of inserting\n"
-	       "\t    --remove-dependencies   Deprecated: use --remove-holders\n"
 	       "\t    --remove-holders        Also remove module holders (use together with -r)\n"
-	       "\t-w, --wait <MSEC>           When removing a module, wait up to MSEC for\n"
+	       "\t-w, --wait MSEC             When removing a module, wait up to MSEC for\n"
 	       "\t                            module's refcount to become 0 so it can be\n"
 	       "\t                            removed (use together with -r)\n"
 	       "\t    --first-time            Fail if module already inserted or removed\n"
@@ -111,28 +110,25 @@ static void help(void)
 	       "\t-i, --ignore-remove         Ignore remove commands\n"
 	       "\t-b, --use-blacklist         Apply blacklist to resolved alias.\n"
 	       "\t-f, --force                 Force module insertion or removal.\n"
-	       "\t                            implies --force-modversions and\n"
+	       "\t                            implies --force-modversion and\n"
 	       "\t                            --force-vermagic\n"
 	       "\t    --force-modversion      Ignore module's version\n"
 	       "\t    --force-vermagic        Ignore module's version magic\n"
 	       "\n"
 	       "Query Options:\n"
-	       "\t-R, --resolve-alias         Only lookup and print alias and exit\n"
-	       "\t-D, --show-depends          Only print module dependencies and exit\n"
-	       "\t-c, --showconfig            Print out known configuration and exit\n"
-	       "\t-c, --show-config           Same as --showconfig\n"
-	       "\t    --show-modversions      Dump module symbol version and exit\n"
-	       "\t    --dump-modversions      Same as --show-modversions\n"
-	       "\t    --show-exports          Only print module exported symbol versions and exit\n"
+	       "\t-R, --show-alias            Print module(s) matching given alias and exit\n"
+	       "\t-D, --show-depends          Print module dependencies and exit\n"
+	       "\t-c, --show-config           Print known configuration and exit\n"
+	       "\t    --show-modversions      Print module symbol version and exit\n"
+	       "\t    --show-exports          Print module exported symbol versions and exit\n"
 	       "\n"
 	       "General Options:\n"
 	       "\t-n, --dry-run               Do not execute operations, just print out\n"
-	       "\t-n, --show                  Same as --dry-run\n"
 
-	       "\t-C, --config=FILE           Use FILE instead of default search paths\n"
-	       "\t-d, --dirname=DIR           Use DIR as filesystem root for " MODULE_DIRECTORY
+	       "\t-C, --config FILE           Use FILE instead of default search paths\n"
+	       "\t-d, --dirname DIR           Use DIR as filesystem root for " MODULE_DIRECTORY
 	       "\n"
-	       "\t-S, --set-version=VERSION   Use VERSION instead of `uname -r`\n"
+	       "\t-S, --set-version VERSION   Use VERSION instead of `uname -r`\n"
 
 	       "\t-s, --syslog                print to syslog, not stderr\n"
 	       "\t-q, --quiet                 disable messages\n"
@@ -204,20 +200,36 @@ static int show_config(struct kmod_ctx *ctx)
 	return 0;
 }
 
-static int show_modversions(struct kmod_ctx *ctx, const char *filename)
+static int module_new_from_any(struct kmod_ctx *ctx, const char *module,
+			       struct kmod_module **mod, struct kmod_list **list)
+{
+	if (strstartswith(module, "/") || strstartswith(module, "./")) {
+		int err = kmod_module_new_from_path(ctx, module, mod);
+		if (err < 0) {
+			LOG("Failed to get module from path %s: %s\n", module,
+			    strerror(-err));
+			return -ENOENT;
+		}
+	} else {
+		int err = kmod_module_new_from_lookup(ctx, module, list);
+		if (*list == NULL || err < 0) {
+			LOG("Module %s not found in directory %s\n", module,
+			    ctx ? kmod_get_dirname(ctx) : "(missing)");
+			return -ENOENT;
+		}
+	}
+	return 0;
+}
+
+static int print_modversions(const struct kmod_module *mod)
 {
 	struct kmod_list *l, *list = NULL;
-	struct kmod_module *mod;
-	int err = kmod_module_new_from_path(ctx, filename, &mod);
-	if (err < 0) {
-		LOG("Module %s not found.\n", filename);
-		return err;
-	}
+	int err;
 
 	err = kmod_module_get_versions(mod, &list);
 	if (err < 0) {
-		LOG("could not get modversions of %s: %s\n", filename, strerror(-err));
-		kmod_module_unref(mod);
+		LOG("could not get modversions of %s: %s\n", kmod_module_get_name(mod),
+		    strerror(-err));
 		return err;
 	}
 
@@ -227,24 +239,39 @@ static int show_modversions(struct kmod_ctx *ctx, const char *filename)
 		printf("0x%08" PRIx64 "\t%s\n", crc, symbol);
 	}
 	kmod_module_versions_free_list(list);
-	kmod_module_unref(mod);
 	return 0;
 }
 
-static int show_exports(struct kmod_ctx *ctx, const char *filename)
+static int show_modversions(struct kmod_ctx *ctx, const char *filename)
 {
 	struct kmod_list *l, *list = NULL;
-	struct kmod_module *mod;
-	int err = kmod_module_new_from_path(ctx, filename, &mod);
-	if (err < 0) {
-		LOG("Module %s not found.\n", filename);
+	struct kmod_module *mod = NULL;
+	int err = module_new_from_any(ctx, filename, &mod, &list);
+	if (err < 0)
 		return err;
-	}
 
-	err = kmod_module_get_symbols(mod, &list);
-	if (err < 0) {
-		LOG("could not get symbols of %s: %s\n", filename, strerror(-err));
+	/* If module is loaded from path */
+	if (mod != NULL) {
+		err = print_modversions(mod);
 		kmod_module_unref(mod);
+	} else {
+		kmod_list_foreach(l, list) {
+			mod = kmod_module_get_module(l);
+			err = print_modversions(mod);
+			kmod_module_unref(mod);
+		}
+		kmod_module_unref_list(list);
+	}
+	return err;
+}
+
+static int print_exports(const struct kmod_module *mod)
+{
+	struct kmod_list *l, *list = NULL;
+	int err = kmod_module_get_symbols(mod, &list);
+	if (err < 0) {
+		LOG("could not get symbols of %s: %s\n", kmod_module_get_name(mod),
+		    strerror(-err));
 		return err;
 	}
 
@@ -254,8 +281,30 @@ static int show_exports(struct kmod_ctx *ctx, const char *filename)
 		printf("0x%08" PRIx64 "\t%s\n", crc, symbol);
 	}
 	kmod_module_symbols_free_list(list);
-	kmod_module_unref(mod);
 	return 0;
+}
+
+static int show_exports(struct kmod_ctx *ctx, const char *filename)
+{
+	struct kmod_list *l, *list = NULL;
+	struct kmod_module *mod = NULL;
+	int err = module_new_from_any(ctx, filename, &mod, &list);
+	if (err < 0)
+		return err;
+
+	/* If module is loaded from path */
+	if (mod != NULL) {
+		err = print_exports(mod);
+		kmod_module_unref(mod);
+	} else {
+		kmod_list_foreach(l, list) {
+			mod = kmod_module_get_module(l);
+			err = print_exports(mod);
+			kmod_module_unref(mod);
+		}
+		kmod_module_unref_list(list);
+	}
+	return err;
 }
 
 static int command_do(struct kmod_module *module, const char *type, const char *command,
@@ -274,7 +323,7 @@ static int command_do(struct kmod_module *module, const char *type, const char *
 	if (cmd == NULL)
 		return -ENOMEM;
 	cmdlen = strlen(cmd);
-	varlen = sizeof("$CMDLINE_OPTS") - 1;
+	varlen = strlen("$CMDLINE_OPTS");
 	while ((p = strstr(cmd, "$CMDLINE_OPTS")) != NULL) {
 		size_t prefixlen = p - cmd;
 		size_t suffixlen = cmdlen - prefixlen - varlen;
@@ -316,7 +365,7 @@ end:
 static int rmmod_do_remove_module(struct kmod_module *mod)
 {
 	const char *modname = kmod_module_get_name(mod);
-	unsigned long long interval_msec = 0, t0_msec = 0, tend_msec = 0;
+	unsigned long long interval_msec, tend_msec = 0;
 	int flags = 0, err;
 
 	SHOW("rmmod %s\n", modname);
@@ -341,17 +390,16 @@ static int rmmod_do_remove_module(struct kmod_module *mod)
 		} else if (err == -EAGAIN && wait_msec) {
 			unsigned long long until_msec;
 
-			if (!t0_msec) {
-				t0_msec = now_msec();
-				tend_msec = t0_msec + wait_msec;
+			if (!tend_msec) {
+				tend_msec = now_msec() + wait_msec;
 				interval_msec = 1;
 			}
 
-			until_msec = get_backoff_delta_msec(t0_msec, tend_msec,
-							    &interval_msec);
+			until_msec = get_backoff_delta_msec(tend_msec, &interval_msec);
 			err = sleep_until_msec(until_msec);
 
-			if (!t0_msec)
+			/* Error out if now_msec() fails */
+			if (tend_msec == wait_msec)
 				err = -ENOTSUP;
 
 			if (err < 0) {
@@ -359,6 +407,7 @@ static int rmmod_do_remove_module(struct kmod_module *mod)
 				err = -EAGAIN;
 				break;
 			}
+			err = -EAGAIN;
 		} else {
 			break;
 		}
@@ -597,21 +646,9 @@ static int insmod(struct kmod_ctx *ctx, const char *alias, const char *extra_opt
 	struct kmod_module *mod = NULL;
 	int err, flags = 0;
 
-	if (strncmp(alias, "/", 1) == 0 || strncmp(alias, "./", 2) == 0) {
-		err = kmod_module_new_from_path(ctx, alias, &mod);
-		if (err < 0) {
-			LOG("Failed to get module from path %s: %s\n", alias,
-			    strerror(-err));
-			return -ENOENT;
-		}
-	} else {
-		err = kmod_module_new_from_lookup(ctx, alias, &list);
-		if (list == NULL || err < 0) {
-			LOG("Module %s not found in directory %s\n", alias,
-			    ctx ? kmod_get_dirname(ctx) : "(missing)");
-			return -ENOENT;
-		}
-	}
+	err = module_new_from_any(ctx, alias, &mod, &list);
+	if (err < 0)
+		return err;
 
 	if (strip_modversion || force)
 		flags |= KMOD_PROBE_FORCE_MODVERSION;
@@ -677,62 +714,6 @@ static void env_modprobe_options_append(const char *value)
 	if (setenv("MODPROBE_OPTIONS", env, 1) < 0)
 		ERR("could not setenv(MODPROBE_OPTIONS, \"%s\")\n", env);
 	free(env);
-}
-
-static int options_from_array(char **args, int nargs, char **output)
-{
-	char *opts = NULL;
-	size_t optslen = 0;
-	int i, err = 0;
-
-	for (i = 1; i < nargs; i++) {
-		size_t len = strlen(args[i]);
-		size_t qlen = 0;
-		const char *value;
-		void *tmp;
-
-		value = strchr(args[i], '=');
-		if (value) {
-			value++;
-			if (*value != '"' && *value != '\'') {
-				if (strchr(value, ' '))
-					qlen = 2;
-			}
-		}
-
-		tmp = realloc(opts, optslen + len + qlen + 2);
-		if (!tmp) {
-			err = -errno;
-			free(opts);
-			opts = NULL;
-			ERR("could not gather module options: out-of-memory\n");
-			break;
-		}
-		opts = tmp;
-		if (optslen > 0) {
-			opts[optslen] = ' ';
-			optslen++;
-		}
-		if (qlen == 0) {
-			memcpy(opts + optslen, args[i], len + 1);
-			optslen += len;
-		} else {
-			size_t keylen = value - args[i];
-			size_t valuelen = len - keylen;
-			memcpy(opts + optslen, args[i], keylen);
-			optslen += keylen;
-			opts[optslen] = '"';
-			optslen++;
-			memcpy(opts + optslen, value, valuelen);
-			optslen += valuelen;
-			opts[optslen] = '"';
-			optslen++;
-			opts[optslen] = '\0';
-		}
-	}
-
-	*output = opts;
-	return err;
 }
 
 static char **prepend_options_from_env(int *p_argc, char **orig_argv)
@@ -821,6 +802,7 @@ static int do_modprobe(int argc, char **orig_argv)
 	int do_show_exports = 0;
 	int err;
 	struct stat stat_buf;
+	bool use_syslog = false;
 
 	argv = prepend_options_from_env(&argc, orig_argv);
 	if (argv == NULL) {
@@ -841,13 +823,18 @@ static int do_modprobe(int argc, char **orig_argv)
 		case 'r':
 			do_remove = 1;
 			break;
+		case 7:
+			WRN("--remove-dependencies is deprecated and scheduled for removal; use --remove-holders\n");
+			/* fall through */
 		case 5:
 			remove_holders = 1;
+			do_remove = 1;
 			break;
 		case 'w': {
 			char *endptr = NULL;
+			errno = 0;
 			wait_msec = strtoul(optarg, &endptr, 0);
-			if (!*optarg || *endptr) {
+			if (!*optarg || *endptr || errno == ERANGE) {
 				ERR("unexpected wait value '%s'.\n", optarg);
 				err = -1;
 				goto done;
@@ -877,20 +864,33 @@ static int do_modprobe(int argc, char **orig_argv)
 			dry_run = 1;
 			do_show = 1;
 			break;
+		case 8:
+			WRN("--resolve-alias is deprecated and scheduled for removal; use --show-alias\n");
+			/* fall through */
 		case 'R':
 			lookup_only = 1;
 			break;
+		case 9:
+			WRN("--showconfig is deprecated and scheduled for removal; use --show-config\n");
+			/* fall through */
 		case 'c':
 			do_show_config = 1;
 			break;
+		case 10:
+			WRN("--dump-modversions is deprecated and scheduled for removal; use --show-modversions\n");
+			/* fall through */
 		case 4:
 			do_show_modversions = 1;
 			break;
 		case 6:
 			do_show_exports = 1;
 			break;
+		case 11:
+			WRN("--show is deprecated and scheduled for removal; use --dry-run\n");
+			/* fall through */
 		case 'n':
 			dry_run = 1;
+			do_show = 1;
 			break;
 		case 'C': {
 			size_t bytes = sizeof(char *) * (n_config_paths + 2);
@@ -917,7 +917,7 @@ static int do_modprobe(int argc, char **orig_argv)
 			break;
 		case 's':
 			env_modprobe_options_append("-s");
-			use_syslog = 1;
+			use_syslog = true;
 			break;
 		case 'q':
 			env_modprobe_options_append("-q");
@@ -950,7 +950,7 @@ static int do_modprobe(int argc, char **orig_argv)
 
 	if (!use_syslog &&
 	    (!stderr || fileno(stderr) == -1 || fstat(fileno(stderr), &stat_buf)))
-		use_syslog = 1;
+		use_syslog = true;
 
 	log_open(use_syslog);
 
@@ -1009,7 +1009,7 @@ static int do_modprobe(int argc, char **orig_argv)
 		err = insmod_all(ctx, args, nargs);
 	else {
 		char *opts;
-		err = options_from_array(args, nargs, &opts);
+		err = options_from_array(args + 1, nargs - 1, &opts);
 		if (err == 0) {
 			err = insmod(ctx, args[0], opts);
 			free(opts);
