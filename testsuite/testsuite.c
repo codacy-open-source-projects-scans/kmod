@@ -168,7 +168,7 @@ int test_spawn_prog(const char *prog, const char *const args[])
 
 static void test_export_environ(const struct test *t)
 {
-	char *preload = NULL;
+	_cleanup_free_ char *preload = NULL;
 	size_t preloadlen = 0;
 	size_t i;
 	const struct keyval *env;
@@ -220,8 +220,6 @@ static void test_export_environ(const struct test *t)
 		}
 		setenv("LD_PRELOAD", preload, 1);
 	}
-
-	free(preload);
 
 	for (env = t->env_vars; env && env->key; env++)
 		setenv(env->key, env->val, 1);
