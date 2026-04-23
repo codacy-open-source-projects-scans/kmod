@@ -136,12 +136,8 @@ _nonnull_all_ bool kmod_module_is_builtin(struct kmod_module *mod);
 
 /* libkmod-file.c */
 struct kmod_file;
-struct kmod_elf;
 _must_check_ _nonnull_all_ int kmod_file_open(const struct kmod_ctx *ctx, const char *filename, struct kmod_file **file);
-_must_check_ _nonnull_all_ int kmod_file_get_elf(struct kmod_file *file, struct kmod_elf **elf);
-_nonnull_all_ int kmod_file_load_contents(struct kmod_file *file);
-_must_check_ _nonnull_all_ const void *kmod_file_get_contents(const struct kmod_file *file);
-_must_check_ _nonnull_all_ off_t kmod_file_get_size(const struct kmod_file *file);
+_must_check_ _nonnull_all_ int kmod_file_get_contents(const struct kmod_file *file, const void **contents, off_t *size);
 _must_check_ _nonnull_all_ enum kmod_file_compression_type kmod_file_get_compression(const struct kmod_file *file);
 _must_check_ _nonnull_all_ int kmod_file_get_fd(const struct kmod_file *file);
 _nonnull_all_ void kmod_file_unref(struct kmod_file *file);
@@ -153,9 +149,9 @@ struct kmod_modversion {
 	const char *symbol;
 };
 
+struct kmod_elf;
 _must_check_ _nonnull_all_ int kmod_elf_new(const void *memory, off_t size, struct kmod_elf **elf);
 _nonnull_all_ void kmod_elf_unref(struct kmod_elf *elf);
-_must_check_ _nonnull_all_ const void *kmod_elf_get_memory(const struct kmod_elf *elf);
 _must_check_ _nonnull_all_ int kmod_elf_get_modinfo_strings(const struct kmod_elf *elf, char ***array);
 _must_check_ _nonnull_all_ int kmod_elf_get_modversions(const struct kmod_elf *elf, struct kmod_modversion **array);
 _must_check_ _nonnull_all_ int kmod_elf_get_symbols(const struct kmod_elf *elf, struct kmod_modversion **array);
@@ -174,14 +170,11 @@ struct kmod_signature_info {
 	size_t signer_len;
 	const char *key_id;
 	size_t key_id_len;
-	const char *algo, *hash_algo, *id_type;
+	const char *hash_algo, *id_type;
 	const char *sig;
 	size_t sig_len;
-	void (*free)(void *);
-	void *private;
 };
-_must_check_ _nonnull_all_ bool kmod_module_signature_info(const struct kmod_file *file, struct kmod_signature_info *sig_info);
-_nonnull_all_ void kmod_module_signature_info_free(struct kmod_signature_info *sig_info);
+_must_check_ _nonnull_all_ bool kmod_module_signature_info(const struct kmod_file *file, struct kmod_signature_info **sig_info);
 
 /* libkmod-builtin.c */
 _nonnull_all_ ssize_t kmod_builtin_get_modinfo(struct kmod_ctx *ctx, const char *modname, char ***modinfo);

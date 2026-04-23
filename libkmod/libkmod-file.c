@@ -58,22 +58,6 @@ static const struct comp_type {
 	// clang-format on
 };
 
-int kmod_file_get_elf(struct kmod_file *file, struct kmod_elf **elf)
-{
-	if (!file->elf) {
-		int err = kmod_file_load_contents(file);
-		if (err)
-			return err;
-
-		err = kmod_elf_new(file->memory, file->size, &file->elf);
-		if (err)
-			return err;
-	}
-
-	*elf = file->elf;
-	return 0;
-}
-
 int kmod_file_open(const struct kmod_ctx *ctx, const char *filename,
 		   struct kmod_file **out_file)
 {
@@ -132,26 +116,18 @@ int kmod_file_open(const struct kmod_ctx *ctx, const char *filename,
 	return 0;
 }
 
-/*
- *  Callers should just check file->memory got updated
- */
-int kmod_file_load_contents(struct kmod_file *file)
+int kmod_file_get_contents(const struct kmod_file *file, const void **contents,
+			   off_t *size)
 {
-	if (file->memory)
-		return 0;
-
-	/*  The load functions already log possible errors. */
-	return file->load(file);
-}
-
-const void *kmod_file_get_contents(const struct kmod_file *file)
-{
-	return file->memory;
-}
-
-off_t kmod_file_get_size(const struct kmod_file *file)
-{
-	return file->size;
+	if (!file->memory) {
+		int ret = file->load((struct kmod_file *)file);
+		/*  The load functions already log possible errors. */
+		if (ret)
+			return ret;
+	}
+	*contents = file->memory;
+	*size = file->size;
+	return 0;
 }
 
 enum kmod_file_compression_type kmod_file_get_compression(const struct kmod_file *file)
@@ -166,9 +142,6 @@ int kmod_file_get_fd(const struct kmod_file *file)
 
 void kmod_file_unref(struct kmod_file *file)
 {
-	if (file->elf)
-		kmod_elf_unref(file->elf);
-
 	if (file->compression == KMOD_FILE_COMPRESSION_NONE) {
 		if (file->memory)
 			munmap(file->memory, file->size);
