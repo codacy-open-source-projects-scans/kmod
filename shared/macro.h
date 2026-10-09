@@ -1,6 +1,6 @@
 /* SPDX-License-Identifier: LGPL-2.1-or-later */
 /*
- * Copyright (C) 2011-2013  ProFUSION embedded systems
+ * Copyright (C) 2011-2013 ProFUSION embedded systems
  */
 #pragma once
 
@@ -30,6 +30,9 @@
 	})
 
 #define ARRAY_SIZE(arr) (sizeof(arr) / sizeof((arr)[0]) + _array_size_chk(arr))
+
+#define _ALIGN_MASK(x, _MASK) (((x) + (_MASK)) & ~(_MASK))
+#define ALIGN(x, B) _ALIGN_MASK(x, (typeof(x))(B) - 1)
 
 #define XSTRINGIFY(x) #x
 #define STRINGIFY(x) XSTRINGIFY(x)

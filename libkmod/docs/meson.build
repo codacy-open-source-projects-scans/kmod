@@ -13,6 +13,7 @@ built_docs = gnome.gtkdoc(
     f'@project_source_root@/libkmod/libkmod-index.h',
     f'@project_source_root@/libkmod/libkmod-internal-file.h',
     f'@project_source_root@/libkmod/libkmod-internal.h',
+    f'@project_source_root@/libkmod/libkmod-internal-signature.h',
   ],
   scan_args : '--ignore-decorators="KMOD_EXPORT"',
   src_dir : f'@project_source_root@/libkmod/',
@@ -20,6 +21,8 @@ built_docs = gnome.gtkdoc(
   module_version : '3',
   main_xml : 'libkmod-docs.xml',
 )
+
+alias_target('docs', built_docs)
 
 test(
   'test-gtkdoc',

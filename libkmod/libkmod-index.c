@@ -1,6 +1,6 @@
 // SPDX-License-Identifier: LGPL-2.1-or-later
 /*
- * Copyright (C) 2011-2013  ProFUSION embedded systems
+ * Copyright (C) 2011-2013 ProFUSION embedded systems
  */
 
 #include <sys/param.h>
@@ -8,6 +8,7 @@
 #include <assert.h>
 #include <endian.h>
 #include <errno.h>
+#include <fcntl.h>
 #include <fnmatch.h>
 #include <inttypes.h>
 #include <limits.h>

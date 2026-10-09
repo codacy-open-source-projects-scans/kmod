@@ -47,8 +47,10 @@ Optional dependencies, required with the default build configuration:
 - LZMA library
 - ZSTD library
 - OPENSSL library (signature handling in modinfo)
+- MBEDTLS library (signature handling in modinfo)
 
-Typical configuration and installation
+All the optional dependencies are loaded on demand via `dlopen` by default. This can
+be changed via the `dlopen` build option. Typical configuration and installation:
 
     meson setup builddir/
     meson compile -C builddir/

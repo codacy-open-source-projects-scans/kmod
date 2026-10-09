@@ -1,6 +1,6 @@
 // SPDX-License-Identifier: LGPL-2.1-or-later
 /*
- * Copyright (C) 2012-2013  ProFUSION embedded systems
+ * Copyright (C) 2012-2013 ProFUSION embedded systems
  */
 
 #include <inttypes.h>
@@ -30,7 +30,7 @@
 #define DEFINE_MODINFO_GENERIC_TEST(_field) \
 	DEFINE_MODINFO_TEST(_field, , "/mod-simple.ko")
 
-#if ENABLE_OPENSSL
+#if ENABLE_OPENSSL || ENABLE_MBEDTLS
 #define DEFINE_MODINFO_SIGN_TEST(_field)                             \
 	DEFINE_MODINFO_TEST(_field, -openssl, "/mod-simple-sha1.ko", \
 			    "/mod-simple-sha256.ko", "/mod-simple-pkcs7.ko")

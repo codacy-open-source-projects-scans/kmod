@@ -1,11 +1,12 @@
 // SPDX-License-Identifier: LGPL-2.1-or-later
 /*
- * Copyright (C) 2011-2013  ProFUSION embedded systems
+ * Copyright (C) 2011-2013 ProFUSION embedded systems
  */
 
 #include <assert.h>
 #include <ctype.h>
 #include <errno.h>
+#include <fcntl.h>
 #include <fnmatch.h>
 #include <limits.h>
 #include <stdarg.h>

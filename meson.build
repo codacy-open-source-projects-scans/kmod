@@ -148,8 +148,8 @@ endif
 # Options
 ################################################################################
 
-module_compressions = ''
-module_signatures = ''
+compressions = []
+signatures = []
 
 features = []
 dep_map = {}
@@ -266,16 +266,18 @@ if bashcompletiondir != 'no'
 endif
 
 #-------------------------------------------------------------------------------
-# Compression support
+# Compression support and signed modules
 #-------------------------------------------------------------------------------
 
-_compression = [
-  ['zstd', 'libzstd', '>= 1.4.4'],
-  ['xz',   'liblzma', '>= 4.99'],
-  ['zlib', 'zlib',    '>= 0'],
+_moar_deps = [
+  ['zstd',    'libzstd',   '>= 1.4.4'],
+  ['xz',      'liblzma',   '>= 4.99'],
+  ['zlib',    'zlib',      '>= 0'],
+  ['openssl', 'libcrypto', '>= 3.0.0'],
+  ['mbedtls', 'mbedx509',  '>= 3.6.0'],
 ]
 
-foreach tuple : _compression
+foreach tuple : _moar_deps
   opt = tuple[0]
   pkg_dep = tuple[1]
   pkg_dep_version = tuple[2]
@@ -295,29 +297,21 @@ foreach tuple : _compression
   cdata.set10('ENABLE_' + opt.to_upper() + '_DLOPEN', have and dlopen)
 
   if have
-    module_compressions += f'@opt@ '
+    if opt == 'openssl' or opt == 'mbedtls'
+      signatures += ['PKCS7']
+    else
+      compressions += [f'@opt@']
+    endif
   endif
 
   features += ['@0@@1@'.format(have ? '+' : '-', opt.to_upper())]
   dep_map += {opt : dep}
 endforeach
 
-#-------------------------------------------------------------------------------
-# Signed modules
-#-------------------------------------------------------------------------------
+signatures += ['legacy']
 
-opt = 'openssl'
-dep = dependency('libcrypto', version : '>= 1.1.0', required : get_option(opt))
-have = dep.found()
-
-if have
-  module_signatures = 'PKCS7 legacy'
-else
-  module_signatures = 'legacy'
-endif
-cdata.set10('ENABLE_' + opt.to_upper(), have)
-features += ['@0@@1@'.format(have ? '+' : '-', opt.to_upper())]
-dep_map += {opt : dep}
+module_compressions = ' '.join(compressions)
+module_signatures = ' '.join(signatures)
 
 #-------------------------------------------------------------------------------
 # Config output
@@ -348,10 +342,10 @@ libshared = static_library(
     'shared/missing.h',
     'shared/strbuf.c',
     'shared/strbuf.h',
+    'shared/tmpfile.c',
+    'shared/tmpfile.h',
     'shared/util.c',
     'shared/util.h',
-    'shared/tmpfile-util.c',
-    'shared/tmpfile-util.h',
   ),
   gnu_symbol_visibility : 'hidden',
 )
@@ -395,7 +389,13 @@ if dep_map.get('zlib').found()
 endif
 
 if dep_map.get('openssl').found()
+  libkmod_files += files('libkmod/libkmod-signature-openssl.c')
   libkmod_deps += dep_map['openssl']
+endif
+
+if dep_map.get('mbedtls').found()
+  libkmod_files += files('libkmod/libkmod-signature-mbedtls.c')
+  libkmod_deps += dep_map['mbedtls']
 endif
 
 install_headers('libkmod/libkmod.h')
@@ -419,6 +419,11 @@ pkg.generate(
   libraries : libkmod,
   requires_private : libkmod_deps,
   libraries_private : cdeps,
+)
+
+install_data(
+  files('libkmod/valgrind/kmod.supp'),
+  install_dir : datadir / 'kmod/valgrind'
 )
 
 if get_option('tools')

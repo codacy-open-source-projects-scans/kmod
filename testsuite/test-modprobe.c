@@ -1,6 +1,6 @@
 // SPDX-License-Identifier: LGPL-2.1-or-later
 /*
- * Copyright (C) 2012-2013  ProFUSION embedded systems
+ * Copyright (C) 2012-2013 ProFUSION embedded systems
  */
 
 #include <inttypes.h>
@@ -147,6 +147,20 @@ DEFINE_TEST(modprobe_weakdep_loop,
 	.modules_not_loaded = "mod-loop-a,mod-simple-c",
 	);
 
+static int modprobe_weakdep_config(void)
+{
+	return EXEC_TOOL(modprobe, "-c");
+}
+DEFINE_TEST(modprobe_weakdep_config,
+	.description = "check modprobe config parsing with weakdep",
+	.config = {
+		[TC_UNAME_R] = "4.4.4",
+		[TC_ROOTFS] = TESTSUITE_ROOTFS "test-modprobe/weakdep-config",
+	},
+	.output = {
+		.out = TESTSUITE_ROOTFS "test-modprobe/weakdep-config/correct.txt",
+	});
+
 static int modprobe_install_cmd_loop(void)
 {
 	return EXEC_TOOL(modprobe, "mod-loop-a");
@@ -263,6 +277,16 @@ DEFINE_TEST_WITH_FUNC(modprobe_param_kcmdline9, modprobe_param_kcmdline,
 	},
 	.output = {
 		.out = TESTSUITE_ROOTFS "test-modprobe/module-param-kcmdline9/correct.txt",
+	});
+
+DEFINE_TEST_WITH_FUNC(modprobe_param_kcmdline10, modprobe_param_kcmdline,
+	.description = "check if multiple masks are parsed correctly",
+	.config = {
+		[TC_UNAME_R] = "4.4.4",
+		[TC_ROOTFS] = TESTSUITE_ROOTFS "test-modprobe/module-param-kcmdline10",
+	},
+	.output = {
+		.out = TESTSUITE_ROOTFS "test-modprobe/module-param-kcmdline10/correct.txt",
 	});
 
 static int modprobe_force(void)
@@ -393,10 +417,7 @@ DEFINE_TEST(modprobe_module_from_abspath,
 
 static int modprobe_module_from_relpath(void)
 {
-	if (chdir("/home/foo") != 0) {
-		perror("failed to change into /home/foo");
-		return EXIT_FAILURE;
-	}
+	TS_ASSERT(chdir("/home/foo") == 0);
 
 	return EXEC_TOOL(modprobe, "./mod-simple.ko");
 }
@@ -408,6 +429,125 @@ DEFINE_TEST(modprobe_module_from_relpath,
 		[TC_INIT_MODULE_RETCODES] = "",
 	},
 	.modules_loaded = "mod-simple",
+	);
+
+static int modprobe_blacklisted_by_alias(void)
+{
+	return EXEC_TOOL(modprobe, "simple.abc");
+}
+DEFINE_TEST(modprobe_blacklisted_by_alias,
+	.description = "check if modprobe alias does not load module with blacklist entry",
+	.config = {
+		[TC_UNAME_R] = "4.4.4",
+		[TC_ROOTFS] = TESTSUITE_ROOTFS "test-modprobe/blacklist",
+		[TC_INIT_MODULE_RETCODES] = "",
+	},
+	.modules_loaded = "",
+	.modules_not_loaded = "mod-simple",
+	);
+
+static int modprobe_blacklisted_by_name(void)
+{
+	return EXEC_TOOL(modprobe, "mod-simple");
+}
+DEFINE_TEST(modprobe_blacklisted_by_name,
+	.description = "check if modprobe modulename loads module with blacklist entry",
+	.config = {
+		[TC_UNAME_R] = "4.4.4",
+		[TC_ROOTFS] = TESTSUITE_ROOTFS "test-modprobe/blacklist-loaded",
+		[TC_INIT_MODULE_RETCODES] = "",
+	},
+	.modules_loaded = "mod-simple",
+	);
+
+static int modprobe_blacklisted_by_name_filtered(void)
+{
+	return EXEC_TOOL(modprobe, "-b", "mod-simple");
+}
+DEFINE_TEST(modprobe_blacklisted_by_name_filtered,
+	.description = "check if modprobe -b modulename does not load module with blacklist entry",
+	.config = {
+		[TC_UNAME_R] = "4.4.4",
+		[TC_ROOTFS] = TESTSUITE_ROOTFS "test-modprobe/blacklist",
+		[TC_INIT_MODULE_RETCODES] = "",
+	},
+	.modules_loaded = "",
+	.modules_not_loaded = "mod-simple",
+	);
+
+static int modprobe_blacklisted_dependency(void)
+{
+	return EXEC_TOOL(modprobe, "-b", "mod-foo");
+}
+DEFINE_TEST(modprobe_blacklisted_dependency,
+	.description = "check if modprobe -b dependent ignores blacklist entry of dependency",
+	.config = {
+		[TC_UNAME_R] = "4.4.4",
+		[TC_ROOTFS] = TESTSUITE_ROOTFS "test-modprobe/blacklist-dep",
+		[TC_INIT_MODULE_RETCODES] = "",
+	},
+	.modules_loaded = "mod-foo,mod-foo-a,mod-foo-b,mod_foo_c",
+	);
+
+static int modprobe_blacklisted_softdep(void)
+{
+	return EXEC_TOOL(modprobe, "-b", "mod-simple");
+}
+DEFINE_TEST(modprobe_blacklisted_softdep,
+	.description = "check if modprobe -b dependent ignores blacklist entry of softdep",
+	.config = {
+		[TC_UNAME_R] = "4.4.4",
+		[TC_ROOTFS] = TESTSUITE_ROOTFS "test-modprobe/blacklist-softdep",
+		[TC_INIT_MODULE_RETCODES] = "",
+	},
+	.modules_loaded = "mod-simple,mod-foo-a",
+	);
+
+static int modprobe_masked(void)
+{
+	return EXEC_TOOL(modprobe, "mod-foo-b");
+}
+DEFINE_TEST(modprobe_masked,
+	.description = "check if modprobe module does not load module with mask entry",
+	.expected_fail = true,
+	.config = {
+		[TC_UNAME_R] = "4.4.4",
+		[TC_ROOTFS] = TESTSUITE_ROOTFS "test-modprobe/mask",
+		[TC_INIT_MODULE_RETCODES] = "",
+	},
+	.modules_loaded = "",
+	.modules_not_loaded = "mod-foo-b",
+	);
+
+static int modprobe_masked_dependency(void)
+{
+	return EXEC_TOOL(modprobe, "mod-foo");
+}
+DEFINE_TEST(modprobe_masked_dependency,
+	.description = "check if modprobe dependent fails because of masked dependency",
+	.expected_fail = true,
+	.config = {
+		[TC_UNAME_R] = "4.4.4",
+		[TC_ROOTFS] = TESTSUITE_ROOTFS "test-modprobe/mask",
+		[TC_INIT_MODULE_RETCODES] = "mod_foo:-1:1",
+	},
+	.modules_loaded = "",
+	.modules_not_loaded = "mod-foo,mod-foo-a,mod-foo-b,mod-foo-c",
+	);
+
+static int modprobe_masked_softdep(void)
+{
+	return EXEC_TOOL(modprobe, "mod-simple");
+}
+DEFINE_TEST(modprobe_masked_softdep,
+	.description = "check if modprobe dependent loads dependent of a masked softdep",
+	.config = {
+		[TC_UNAME_R] = "4.4.4",
+		[TC_ROOTFS] = TESTSUITE_ROOTFS "test-modprobe/mask-softdep",
+		[TC_INIT_MODULE_RETCODES] = "",
+	},
+	.modules_loaded = "mod-simple",
+	.modules_not_loaded = "mod-foo-a",
 	);
 
 TESTSUITE_MAIN();

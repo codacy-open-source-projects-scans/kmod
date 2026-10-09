@@ -99,6 +99,7 @@ struct kmod_config {
 	struct kmod_list *aliases;
 	struct kmod_list *blacklists;
 	struct kmod_list *options;
+	struct kmod_list *masks;
 	struct kmod_list *remove_commands;
 	struct kmod_list *install_commands;
 	struct kmod_list *softdeps;
@@ -112,6 +113,7 @@ _nonnull_all_ void kmod_config_free(struct kmod_config *config);
 _nonnull_all_ const char *kmod_blacklist_get_modname(const struct kmod_list *l);
 _nonnull_all_ const char *kmod_alias_get_name(const struct kmod_list *l);
 _nonnull_all_ const char *kmod_alias_get_modname(const struct kmod_list *l);
+_nonnull_all_ const char *kmod_mask_get_modname(const struct kmod_list *l);
 _nonnull_all_ const char *kmod_option_get_options(const struct kmod_list *l);
 _nonnull_all_ const char *kmod_option_get_modname(const struct kmod_list *l);
 _nonnull_all_ const char *kmod_command_get_command(const struct kmod_list *l);
@@ -156,6 +158,7 @@ _must_check_ _nonnull_all_ int kmod_elf_get_modinfo_strings(const struct kmod_el
 _must_check_ _nonnull_all_ int kmod_elf_get_modversions(const struct kmod_elf *elf, struct kmod_modversion **array);
 _must_check_ _nonnull_all_ int kmod_elf_get_symbols(const struct kmod_elf *elf, struct kmod_modversion **array);
 _must_check_ _nonnull_all_ int kmod_elf_get_dependency_symbols(const struct kmod_elf *elf, struct kmod_modversion **array);
+_must_check_ _nonnull_all_ int kmod_elf_get_build_id(const struct kmod_elf *elf, const void **hash, size_t *hash_len);
 _must_check_ _nonnull_all_ int kmod_elf_strip(const struct kmod_elf *elf, unsigned int flags, const void **stripped);
 
 /*

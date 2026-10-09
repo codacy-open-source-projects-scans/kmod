@@ -1,7 +1,7 @@
 // SPDX-License-Identifier: LGPL-2.1-or-later
 /*
- * Copyright (C) 2011-2013  ProFUSION embedded systems
- * Copyright (C) 2014  Intel Corporation. All rights reserved.
+ * Copyright (C) 2011-2013 ProFUSION embedded systems
+ * Copyright (C) 2014 Intel Corporation. All rights reserved.
  */
 
 #include <assert.h>
@@ -10,8 +10,9 @@
 #include <string.h>
 #include <sys/param.h>
 
-#include "util.h"
+#include "macro.h"
 #include "strbuf.h"
+#include "util.h"
 
 #define BUF_STEP 128
 
@@ -19,13 +20,11 @@ static bool buf_realloc(struct strbuf *buf, size_t sz)
 {
 	void *tmp = realloc(buf->heap ? buf->bytes : NULL, sz);
 
-	if (sz > 0) {
-		if (tmp == NULL)
-			return false;
+	if (tmp == NULL)
+		return false;
 
-		if (!buf->heap)
-			memcpy(tmp, buf->bytes, MIN(buf->size, sz));
-	}
+	if (!buf->heap)
+		memcpy(tmp, buf->bytes, MIN(buf->size, sz));
 
 	buf->heap = true;
 	buf->bytes = tmp;
@@ -34,16 +33,17 @@ static bool buf_realloc(struct strbuf *buf, size_t sz)
 	return true;
 }
 
-static bool strbuf_reserve_extra(struct strbuf *buf, size_t n)
+bool strbuf_reserve_extra(struct strbuf *buf, size_t n)
 {
 	if (n < buf->size - buf->used)
 		return true;
 
-	if (uaddsz_overflow(buf->used, n, &n) || n >= SIZE_MAX - BUF_STEP)
+	/* Reserve extra space for the \0 byte */
+	if (uaddsz_overflow(n, 1, &n) || uaddsz_overflow(buf->used, n, &n) ||
+	    n > SIZE_MAX - BUF_STEP)
 		return false;
 
-	if (++n % BUF_STEP)
-		n = ((n / BUF_STEP) + 1) * BUF_STEP;
+	n = ALIGN(n, BUF_STEP);
 
 	return buf_realloc(buf, n);
 }

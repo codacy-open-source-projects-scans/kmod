@@ -3,7 +3,7 @@
  * kmod-static-nodes - manage modules.devname
  *
  * Copyright (C) 2004-2012 Kay Sievers <kay@vrfy.org>
- * Copyright (C) 2011-2013  ProFUSION embedded systems
+ * Copyright (C) 2011-2013 ProFUSION embedded systems
  * Copyright (C) 2013 Tom Gundersen <teg@jklm.no>
  */
 
@@ -41,9 +41,9 @@ static const struct static_nodes_format *const static_nodes_formats[] = {
 
 static const char cmdopts_s[] = "o:f:h";
 static const struct option cmdopts[] = {
-	{ "output", required_argument, 0, 'o' },
-	{ "format", required_argument, 0, 'f' },
-	{ "help", no_argument, 0, 'h' },
+	{ "output", required_argument, NULL, 'o' },
+	{ "format", required_argument, NULL, 'f' },
+	{ "help", no_argument, NULL, 'h' },
 	{},
 };
 
@@ -149,15 +149,10 @@ static int do_static_nodes(int argc, char *argv[])
 	FILE *in = NULL, *out = NULL;
 	const struct static_nodes_format *format = &static_nodes_format_human;
 	int r, ret = EXIT_SUCCESS;
+	int c, valid;
 
-	for (;;) {
-		int c, idx = 0, valid;
-		size_t i;
-
-		c = getopt_long(argc, argv, cmdopts_s, cmdopts, &idx);
-		if (c == -1) {
-			break;
-		}
+	opterr = 0;
+	while ((c = getopt_long(argc, argv, cmdopts_s, cmdopts, NULL)) != -1) {
 		switch (c) {
 		case 'o':
 			output = optarg;
@@ -165,7 +160,7 @@ static int do_static_nodes(int argc, char *argv[])
 		case 'f':
 			valid = 0;
 
-			for (i = 0; i < ARRAY_SIZE(static_nodes_formats); i++) {
+			for (size_t i = 0; i < ARRAY_SIZE(static_nodes_formats); i++) {
 				if (streq(static_nodes_formats[i]->name, optarg)) {
 					format = static_nodes_formats[i];
 					valid = 1;
@@ -183,6 +178,9 @@ static int do_static_nodes(int argc, char *argv[])
 			help();
 			goto finish;
 		case '?':
+			fprintf(stderr, "unrecognised option \'%s\'\n\n",
+				argv[optind - 1]);
+			help();
 			ret = EXIT_FAILURE;
 			goto finish;
 		default:

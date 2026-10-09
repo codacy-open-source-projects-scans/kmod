@@ -1,6 +1,6 @@
 /* SPDX-License-Identifier: LGPL-2.1-or-later */
 /*
- * Copyright (C) 2012-2013  ProFUSION embedded systems
+ * Copyright (C) 2012-2013 ProFUSION embedded systems
  */
 
 #pragma once
@@ -114,30 +114,41 @@ int test_run(const struct test *t);
 
 #define TS_EXPORT __attribute__((visibility("default")))
 
-#define _LOG(prefix, fmt, ...) printf("TESTSUITE: " prefix fmt, ##__VA_ARGS__)
-#define LOG(fmt, ...) _LOG("", fmt, ##__VA_ARGS__)
-#define WARN(fmt, ...) _LOG("WARN: ", fmt, ##__VA_ARGS__)
-#define ERR(fmt, ...) _LOG("ERR: ", fmt, ##__VA_ARGS__)
+#define _TS_LOG(prefix, fmt, ...) printf("TESTSUITE: " prefix fmt, ##__VA_ARGS__)
+#define TS_LOG(fmt, ...) _TS_LOG("", fmt, ##__VA_ARGS__)
+#define TS_WARN(fmt, ...) _TS_LOG("WARN: ", fmt, ##__VA_ARGS__)
+#define TS_ERR(fmt, ...) _TS_LOG("ERR: ", fmt, ##__VA_ARGS__)
 
-#define assert_return(expr, r)                                                  \
-	do {                                                                    \
-		if ((!(expr))) {                                                \
-			ERR("Failed assertion: " #expr " %s:%d %s\n", __FILE__, \
-			    __LINE__, __PRETTY_FUNCTION__);                     \
-			return (r);                                             \
-		}                                                               \
+#define TS_ASSERT(expr)                                                            \
+	do {                                                                       \
+		if ((!(expr))) {                                                   \
+			TS_ERR("ASSERTION FAILED at %s:%d\n", __FILE__, __LINE__); \
+			TS_ERR("\t" #expr "\n");                                   \
+			return EXIT_FAILURE;                                       \
+		}                                                                  \
 	} while (false)
 
 /* Test definitions */
-#define DEFINE_TEST_WITH_FUNC(_name, _func, ...)                                      \
-	_used_ _retain_ _section_("kmod_tests") _alignedptr_ static const struct test \
-	UNIQ(s##_name) = { .name = #_name, .func = _func, ##__VA_ARGS__ }
+#define DEFINE_TEST_WITH_FUNC(_name, _func, ...)                           \
+	_used_ _retain_ _section_("kmod_tests")                            \
+	_alignedptr_ static const struct test s##_name = { .name = #_name, \
+							   .func = _func,  \
+							   ##__VA_ARGS__ }
 
 #define DEFINE_TEST(_name, ...) DEFINE_TEST_WITH_FUNC(_name, _name, __VA_ARGS__)
 
+/* The order in which the entries are are added into the kmod_test section is
+ * implementation specific. In practise both gcc and clang, do so in order reserve to the
+ * one in the source.
+ *
+ * Flip them, so we can observe consistent ordering amongst the source, listing and
+ * execution.
+ */
+#define kmod_test_foreach(t, start, stop) for (t = stop - 1; t >= start; t--)
+
 #define TESTSUITE_MAIN()                                                                 \
-	extern struct test __start_kmod_tests[] __attribute__((visibility("hidden")));   \
-	extern struct test __stop_kmod_tests[] __attribute__((visibility("hidden")));    \
+	extern const struct test __start_kmod_tests[];                                   \
+	extern const struct test __stop_kmod_tests[];                                    \
 	int main(int argc, char *argv[])                                                 \
 	{                                                                                \
 		const struct test *t;                                                    \
@@ -161,7 +172,7 @@ int test_run(const struct test *t);
 			return test_run(t);                                              \
 		}                                                                        \
                                                                                          \
-		for (t = __start_kmod_tests; t < __stop_kmod_tests; t++) {               \
+		kmod_test_foreach(t, __start_kmod_tests, __stop_kmod_tests) {            \
 			if (test_run(t) != 0)                                            \
 				ret = EXIT_FAILURE;                                      \
 		}                                                                        \

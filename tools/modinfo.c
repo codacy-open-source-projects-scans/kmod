@@ -2,7 +2,8 @@
 /*
  * kmod-modinfo - query kernel module information using libkmod.
  *
- * Copyright (C) 2011-2013  ProFUSION embedded systems
+ * Copyright (C) 2011-2013 ProFUSION embedded systems
+ * Copyright (C) 2026 Emil Velikov
  */
 
 #include <errno.h>
@@ -12,9 +13,11 @@
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
+#include <unistd.h>
 #include <sys/stat.h>
 #include <sys/utsname.h>
 
+#include <shared/strbuf.h>
 #include <shared/util.h>
 
 #include <libkmod/libkmod.h>
@@ -25,157 +28,112 @@ static char separator = '\n';
 static const char *field;
 
 struct param {
-	struct param *next;
 	const char *name;
-	const char *param;
+	const char *desc;
 	const char *type;
 	int namelen;
-	int paramlen;
-	int typelen;
 };
 
-static int add_param(const char *name, size_t namelen, const char *param, size_t paramlen,
-		     const char *type, size_t typelen, struct param **list)
+enum parm_info {
+	parm_desc,
+	parm_type,
+};
+
+static void add_param(const char *name, int namelen, enum parm_info parm_info,
+		      const char *value, struct param *params, unsigned int params_count)
 {
-	struct param *it;
+	/* We are guaranteed to have a match, or at least one empty entry */
+	for (unsigned int i = 0; i < params_count; i++) {
+		struct param *it = &params[i];
 
-	if (namelen > INT_MAX || paramlen > INT_MAX || typelen > INT_MAX) {
-		return -EINVAL;
-	}
+		if (it->name != NULL &&
+		    (it->namelen != namelen || memcmp(it->name, name, namelen) != 0)) {
+			continue;
+		}
 
-	for (it = *list; it != NULL; it = it->next) {
-		if (it->namelen == (int)namelen && memcmp(it->name, name, namelen) == 0)
-			break;
-	}
-
-	if (it == NULL) {
-		it = malloc(sizeof(struct param));
-		if (it == NULL)
-			return -ENOMEM;
-		it->next = *list;
-		*list = it;
 		it->name = name;
 		it->namelen = namelen;
-		it->param = NULL;
-		it->type = NULL;
-		it->paramlen = 0;
-		it->typelen = 0;
-	}
 
-	if (param != NULL) {
-		it->param = param;
-		it->paramlen = paramlen;
+		switch (parm_info) {
+		case (parm_desc):
+			it->desc = value;
+			break;
+		case (parm_type):
+			it->type = value;
+			break;
+		}
+		break;
 	}
-
-	if (type != NULL) {
-		it->type = type;
-		it->typelen = typelen;
-	}
-
-	return 0;
 }
 
-static int process_parm(const char *key, const char *value, struct param **params)
+static void process_parm(enum parm_info parm_info, const char *value,
+			 struct param *params, unsigned int params_count)
 {
-	const char *name, *param, *type;
-	size_t namelen, paramlen, typelen;
+	const char *name;
+	int namelen;
 	const char *colon = strchr(value, ':');
-	int ret;
 
 	if (colon == NULL) {
-		ERR("Found invalid \"%s=%s\": missing ':'\n", key, value);
-		return 0;
+		ERR("Missing ':' in value \"%s\"\n", value);
+		return;
+	}
+
+	if (colon == value) {
+		ERR("Missing param name in value \"%s\"\n", value);
+		return;
 	}
 
 	name = value;
-	namelen = colon - value;
-	if (streq(key, "parm")) {
-		param = colon + 1;
-		paramlen = strlen(param);
-		type = NULL;
-		typelen = 0;
-	} else {
-		param = NULL;
-		paramlen = 0;
-		type = colon + 1;
-		typelen = strlen(type);
-	}
-
-	ret = add_param(name, namelen, param, paramlen, type, typelen, params);
-	if (ret < 0) {
-		ERR("Unable to add parameter: %s\n", strerror(-ret));
-		return -ENOMEM;
-	}
-
-	return 0;
+	namelen = (int)(colon - value);
+	add_param(name, namelen, parm_info, colon + 1, params, params_count);
 }
 
-static int modinfo_params_do(const struct kmod_list *list)
+static void print_line(const char *key, const char *value)
 {
-	const struct kmod_list *l;
-	struct param *params = NULL;
-	int err = 0;
-
-	kmod_list_foreach(l, list) {
-		const char *key = kmod_module_info_get_key(l);
-		const char *value = kmod_module_info_get_value(l);
-		if (!streq(key, "parm") && !streq(key, "parmtype"))
-			continue;
-
-		err = process_parm(key, value, &params);
-		if (err < 0)
-			goto end;
+	if (key == NULL) {
+		printf("%s%c", value, separator);
+		return;
 	}
 
-	while (params != NULL) {
-		struct param *p = params;
-		params = p->next;
-
-		if (p->param == NULL)
-			printf("%.*s: (%.*s)%c", p->namelen, p->name, p->typelen, p->type,
-			       separator);
-		else if (p->type != NULL)
-			printf("%.*s:%.*s (%.*s)%c", p->namelen, p->name, p->paramlen,
-			       p->param, p->typelen, p->type, separator);
-		else
-			printf("%.*s:%.*s%c", p->namelen, p->name, p->paramlen, p->param,
-			       separator);
-
-		free(p);
+	if (separator == '\0') {
+		printf("%s=%s%c", key, value, separator);
+	} else {
+		size_t keylen = strlen(key);
+		if (keylen > 15)
+			keylen = 15;
+		printf("%s:%-*s%s%c", key, 15 - (int)keylen, "", value, separator);
 	}
-
-end:
-	while (params != NULL) {
-		void *tmp = params;
-		params = params->next;
-		free(tmp);
-	}
-
-	return err;
 }
 
 static int modinfo_do(struct kmod_module *mod)
 {
+	DECLARE_STRBUF_WITH_STACK(buf, 256);
+	const bool print_all = field == NULL;
+	const bool print_parm = !print_all && streq(field, "parm");
 	struct kmod_list *l, *list = NULL;
 	struct param *params = NULL;
+	unsigned int params_count = 0;
 	int err, is_builtin;
 	const char *filename = kmod_module_get_path(mod);
 
 	is_builtin = (filename == NULL);
 
+	/* TODO: align builtin vs not wrt listing "name:" via kmod_module_get_info() */
 	if (is_builtin) {
-		if (field == NULL)
-			printf("%-16s%s%c", "name:", kmod_module_get_name(mod), separator);
-		else if (field != NULL && streq(field, "name"))
-			printf("%s%c", kmod_module_get_name(mod), separator);
+		if (print_all)
+			print_line("name", kmod_module_get_name(mod));
+		else if (streq(field, "name")) {
+			print_line(NULL, kmod_module_get_name(mod));
+			return 0;
+		}
 		filename = "(builtin)";
 	}
 
-	if (field != NULL && streq(field, "filename")) {
-		printf("%s%c", filename, separator);
+	if (print_all)
+		print_line("filename", filename);
+	else if (streq(field, "filename")) {
+		print_line(NULL, filename);
 		return 0;
-	} else if (field == NULL) {
-		printf("%-16s%s%c", "filename:", filename, separator);
 	}
 
 	err = kmod_module_get_info(mod, &list);
@@ -192,60 +150,109 @@ static int modinfo_do(struct kmod_module *mod)
 		return err;
 	}
 
-	if (field != NULL && streq(field, "parm")) {
-		err = modinfo_params_do(list);
-		goto end;
+	if (print_all || print_parm) {
+		size_t count = 0;
+		size_t longest_desc = 0;
+		size_t longest_type = 0;
+		bool can_reserve;
+
+		/*
+		 * Usually parm/parmtype come in pairs, where we print once per pair.
+		 *
+		 * Get worst case scenario & longest entry, for sufficiently large buffers.
+		 */
+		kmod_list_foreach(l, list) {
+			const char *key = kmod_module_info_get_key(l);
+			size_t *longest_value;
+
+			if (streq(key, "parm"))
+				longest_value = &longest_desc;
+			else if (streq(key, "parmtype"))
+				longest_value = &longest_type;
+			else
+				continue;
+
+			const char *value = kmod_module_info_get_value(l);
+			size_t len = strlen(value);
+
+			count++;
+
+			if (len > *longest_value)
+				*longest_value = len;
+		}
+
+		/* XXX: do we want to emit a warning/error here? */
+		params_count = (count > UINT_MAX) ? UINT_MAX : (unsigned int)count;
+
+		if (params_count) {
+			params = calloc(params_count, sizeof(*params));
+
+			/*
+			 * The "name:" exists in both parm&parmtype, so don't worry if we
+			 * overallocate.
+			 */
+			can_reserve =
+				strbuf_reserve_extra(&buf, longest_desc + strlen(" ()") +
+								   longest_type);
+			if (params == NULL || !can_reserve) {
+				err = -ENOMEM;
+				goto end;
+			}
+		}
 	}
 
 	kmod_list_foreach(l, list) {
 		const char *key = kmod_module_info_get_key(l);
 		const char *value = kmod_module_info_get_value(l);
+		enum parm_info parm_info;
 
-		if (field != NULL) {
-			if (streq(field, key)) {
-				/* filtered output contains no key, just value */
-				printf("%s%c", value, separator);
-			}
-		} else if (streq(key, "parm") || streq(key, "parmtype")) {
-			err = process_parm(key, value, &params);
-			if (err < 0)
-				goto end;
-		} else if (separator == '\0') {
-			printf("%s=%s%c", key, value, separator);
-		} else {
-			size_t keylen = strlen(key);
-			if (keylen > 15)
-				keylen = 15;
-			printf("%s:%-*s%s%c", key, 15 - (int)keylen, "", value, separator);
+		if (!print_all && !print_parm) {
+			if (streq(field, key))
+				print_line(NULL, value);
+			continue;
 		}
+
+		if (streq(key, "parm")) {
+			parm_info = parm_desc;
+		} else if (streq(key, "parmtype")) {
+			parm_info = parm_type;
+		} else {
+			if (print_all)
+				print_line(key, value);
+			continue;
+		}
+
+		if (strlen(value) > INT_MAX) {
+			ERR("%s's value is longer than INT_MAX\n",
+			    parm_info == parm_desc ? "parm" : "parmtype");
+			continue;
+		}
+		process_parm(parm_info, value, params, params_count);
 	}
 
-	if (field != NULL)
-		goto end;
+	for (unsigned int i = 0; i < params_count; i++) {
+		struct param *p = &params[i];
+		if (p->name == NULL)
+			continue;
 
-	while (params != NULL) {
-		struct param *p = params;
-		params = p->next;
+		strbuf_clear(&buf);
+		strbuf_pushmem(&buf, p->name, p->namelen);
+		strbuf_pushchar(&buf, ':');
 
-		if (p->param == NULL)
-			printf("%-16s%.*s:%.*s%c", "parm:", p->namelen, p->name,
-			       p->typelen, p->type, separator);
-		else if (p->type != NULL)
-			printf("%-16s%.*s:%.*s (%.*s)%c", "parm:", p->namelen, p->name,
-			       p->paramlen, p->param, p->typelen, p->type, separator);
-		else
-			printf("%-16s%.*s:%.*s%c", "parm:", p->namelen, p->name,
-			       p->paramlen, p->param, separator);
+		if (p->desc != NULL)
+			strbuf_pushchars(&buf, p->desc);
 
-		free(p);
+		if (p->type != NULL) {
+			strbuf_pushchars(&buf, " (");
+			strbuf_pushchars(&buf, p->type);
+			strbuf_pushchars(&buf, ")");
+		}
+
+		print_line(print_parm ? NULL : "parm", strbuf_str(&buf));
 	}
 
 end:
-	while (params != NULL) {
-		void *tmp = params;
-		params = params->next;
-		free(tmp);
-	}
+	free(params);
 	kmod_module_info_free_list(list);
 
 	return err;
@@ -308,19 +315,19 @@ static int modinfo_alias_do(struct kmod_ctx *ctx, const char *alias)
 
 static const char cmdopts_s[] = "adlpn0mF:k:b:Vh";
 static const struct option cmdopts[] = {
-	{ "author", no_argument, 0, 'a' },
-	{ "description", no_argument, 0, 'd' },
-	{ "license", no_argument, 0, 'l' },
-	{ "parameters", no_argument, 0, 'p' },
-	{ "filename", no_argument, 0, 'n' },
-	{ "null", no_argument, 0, '0' },
-	{ "modname", no_argument, 0, 'm' },
-	{ "field", required_argument, 0, 'F' },
-	{ "set-version", required_argument, 0, 'k' },
-	{ "basedir", required_argument, 0, 'b' },
-	{ "version", no_argument, 0, 'V' },
-	{ "help", no_argument, 0, 'h' },
-	{ NULL, 0, 0, 0 },
+	{ "author", no_argument, NULL, 'a' },
+	{ "description", no_argument, NULL, 'd' },
+	{ "license", no_argument, NULL, 'l' },
+	{ "parameters", no_argument, NULL, 'p' },
+	{ "filename", no_argument, NULL, 'n' },
+	{ "null", no_argument, NULL, '0' },
+	{ "modname", no_argument, NULL, 'm' },
+	{ "field", required_argument, NULL, 'F' },
+	{ "set-version", required_argument, NULL, 'k' },
+	{ "basedir", required_argument, NULL, 'b' },
+	{ "version", no_argument, NULL, 'V' },
+	{ "help", no_argument, NULL, 'h' },
+	{},
 };
 
 static void help(void)
@@ -364,13 +371,10 @@ static int do_modinfo(int argc, char *argv[])
 	const char *root = NULL;
 	const char *null_config = NULL;
 	bool arg_is_modname = false;
-	int i, err;
+	int i, err, c;
 
-	for (;;) {
-		int c, idx = 0;
-		c = getopt_long(argc, argv, cmdopts_s, cmdopts, &idx);
-		if (c == -1)
-			break;
+	opterr = 0;
+	while ((c = getopt_long(argc, argv, cmdopts_s, cmdopts, NULL)) != -1) {
 		switch (c) {
 		case 'a':
 			field = "author";
@@ -409,6 +413,8 @@ static int do_modinfo(int argc, char *argv[])
 			kmod_version();
 			return EXIT_SUCCESS;
 		case '?':
+			ERR("unrecognised option \'%s\'\n\n", argv[optind - 1]);
+			help();
 			return EXIT_FAILURE;
 		default:
 			ERR("unexpected getopt_long() value '%c'.\n", c);

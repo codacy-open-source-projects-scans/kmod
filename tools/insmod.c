@@ -1,6 +1,6 @@
 // SPDX-License-Identifier: GPL-2.0-or-later
 /*
- * Copyright (C) 2011-2013  ProFUSION embedded systems
+ * Copyright (C) 2011-2013 ProFUSION embedded systems
  */
 
 #include <errno.h>
@@ -18,16 +18,14 @@
 
 static const char cmdopts_s[] = "fsvVh";
 static const struct option cmdopts[] = {
-	// clang-format off
-	{ "force", no_argument, 0, 'f' },
-	{ "force-modversion", no_argument, 0, 2 },
-	{ "force-vermagic", no_argument, 0, 1 },
-	{ "syslog", no_argument, 0, 's' },
-	{ "verbose", no_argument, 0, 'v' },
-	{ "version", no_argument, 0, 'V' },
-	{ "help", no_argument, 0, 'h' },
-	{ NULL, 0, 0, 0 },
-	// clang-format on
+	{ "force", no_argument, NULL, 'f' },
+	{ "force-modversion", no_argument, NULL, 2 },
+	{ "force-vermagic", no_argument, NULL, 1 },
+	{ "syslog", no_argument, NULL, 's' },
+	{ "verbose", no_argument, NULL, 'v' },
+	{ "version", no_argument, NULL, 'V' },
+	{ "help", no_argument, NULL, 'h' },
+	{},
 };
 
 static void help(void)
@@ -76,6 +74,7 @@ static int do_insmod(int argc, char *argv[])
 	const char *null_config = NULL;
 	unsigned int flags = 0;
 
+	opterr = 0;
 	while ((c = getopt_long(argc, argv, cmdopts_s, cmdopts, NULL)) != -1) {
 		switch (c) {
 		case 'f':
@@ -101,6 +100,8 @@ static int do_insmod(int argc, char *argv[])
 			kmod_version();
 			return EXIT_SUCCESS;
 		case '?':
+			ERR("unrecognised option \'%s\'\n\n", argv[optind - 1]);
+			help();
 			return EXIT_FAILURE;
 		default:
 			ERR("unexpected getopt_long() value '%c'.\n", c);

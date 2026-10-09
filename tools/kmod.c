@@ -1,12 +1,13 @@
 // SPDX-License-Identifier: GPL-2.0-or-later
 /*
- * Copyright (C) 2011-2013  ProFUSION embedded systems
+ * Copyright (C) 2011-2013 ProFUSION embedded systems
  */
 
 #include <getopt.h>
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
+#include <unistd.h>
 
 #include <shared/util.h>
 #include <shared/missing.h>
@@ -81,16 +82,11 @@ static const struct kmod_cmd kmod_cmd_help = {
 static int handle_kmod_commands(int argc, char *argv[])
 {
 	const char *cmd;
-	int err = 0;
+	int err = 0, c;
 	size_t i;
 
-	for (;;) {
-		int c;
-
-		c = getopt_long(argc, argv, options_s, options, NULL);
-		if (c == -1)
-			break;
-
+	opterr = 0;
+	while ((c = getopt_long(argc, argv, options_s, options, NULL)) != -1) {
 		switch (c) {
 		case 'h':
 			kmod_help(argc, argv);
@@ -99,6 +95,8 @@ static int handle_kmod_commands(int argc, char *argv[])
 			kmod_version();
 			return EXIT_SUCCESS;
 		case '?':
+			ERR("unrecognised option \'%s\'\n\n", argv[optind - 1]);
+			kmod_help(argc, argv);
 			return EXIT_FAILURE;
 		default:
 			fprintf(stderr, "Error: unexpected getopt_long() value '%c'.\n",

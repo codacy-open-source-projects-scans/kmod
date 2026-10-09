@@ -2,7 +2,7 @@
 /*
  * kmod-modprobe - manage linux kernel modules using libkmod.
  *
- * Copyright (C) 2011-2013  ProFUSION embedded systems
+ * Copyright (C) 2011-2013 ProFUSION embedded systems
  */
 
 #include <assert.h>
@@ -48,43 +48,43 @@ static int quiet_inuse;
 
 static const char cmdopts_s[] = "arw:RibfDcnC:d:S:sqvVh";
 static const struct option cmdopts[] = {
-	{ "all", no_argument, 0, 'a' },
+	{ "all", no_argument, NULL, 'a' },
 
-	{ "remove", no_argument, 0, 'r' },
-	{ "remove-dependencies", no_argument, 0, 7 },
-	{ "remove-holders", no_argument, 0, 5 },
-	{ "wait", required_argument, 0, 'w' },
+	{ "remove", no_argument, NULL, 'r' },
+	{ "remove-dependencies", no_argument, NULL, 7 },
+	{ "remove-holders", no_argument, NULL, 5 },
+	{ "wait", required_argument, NULL, 'w' },
 
-	{ "resolve-alias", no_argument, 0, 8 },
-	{ "show-alias", no_argument, 0, 'R' },
-	{ "first-time", no_argument, 0, 3 },
-	{ "ignore-install", no_argument, 0, 'i' },
-	{ "ignore-remove", no_argument, 0, 'i' },
-	{ "use-blacklist", no_argument, 0, 'b' },
-	{ "force", no_argument, 0, 'f' },
-	{ "force-modversion", no_argument, 0, 2 },
-	{ "force-vermagic", no_argument, 0, 1 },
+	{ "resolve-alias", no_argument, NULL, 8 },
+	{ "show-alias", no_argument, NULL, 'R' },
+	{ "first-time", no_argument, NULL, 3 },
+	{ "ignore-install", no_argument, NULL, 'i' },
+	{ "ignore-remove", no_argument, NULL, 'i' },
+	{ "use-blacklist", no_argument, NULL, 'b' },
+	{ "force", no_argument, NULL, 'f' },
+	{ "force-modversion", no_argument, NULL, 2 },
+	{ "force-vermagic", no_argument, NULL, 1 },
 
-	{ "show-depends", no_argument, 0, 'D' },
-	{ "showconfig", no_argument, 0, 9 },
-	{ "show-config", no_argument, 0, 'c' },
-	{ "show-modversions", no_argument, 0, 4 },
-	{ "dump-modversions", no_argument, 0, 10 },
-	{ "show-exports", no_argument, 0, 6 },
+	{ "show-depends", no_argument, NULL, 'D' },
+	{ "showconfig", no_argument, NULL, 9 },
+	{ "show-config", no_argument, NULL, 'c' },
+	{ "show-modversions", no_argument, NULL, 4 },
+	{ "dump-modversions", no_argument, NULL, 10 },
+	{ "show-exports", no_argument, NULL, 6 },
 
-	{ "dry-run", no_argument, 0, 'n' },
-	{ "show", no_argument, 0, 11 },
+	{ "dry-run", no_argument, NULL, 'n' },
+	{ "show", no_argument, NULL, 11 },
 
-	{ "config", required_argument, 0, 'C' },
-	{ "dirname", required_argument, 0, 'd' },
-	{ "set-version", required_argument, 0, 'S' },
+	{ "config", required_argument, NULL, 'C' },
+	{ "dirname", required_argument, NULL, 'd' },
+	{ "set-version", required_argument, NULL, 'S' },
 
-	{ "syslog", no_argument, 0, 's' },
-	{ "quiet", no_argument, 0, 'q' },
-	{ "verbose", no_argument, 0, 'v' },
-	{ "version", no_argument, 0, 'V' },
-	{ "help", no_argument, 0, 'h' },
-	{ NULL, 0, 0, 0 },
+	{ "syslog", no_argument, NULL, 's' },
+	{ "quiet", no_argument, NULL, 'q' },
+	{ "verbose", no_argument, NULL, 'v' },
+	{ "version", no_argument, NULL, 'V' },
+	{ "help", no_argument, NULL, 'h' },
+	{},
 };
 
 static void help(void)
@@ -160,6 +160,7 @@ static int show_config(struct kmod_ctx *ctx)
 		const char *name;
 		struct kmod_config_iter *(*get_iter)(const struct kmod_ctx *ctx);
 	} ci[] = {
+		{ "mask", kmod_config_get_masks },
 		{ "blacklist", kmod_config_get_blacklists },
 		{ "install", kmod_config_get_install_commands },
 		{ "remove", kmod_config_get_remove_commands },
@@ -803,7 +804,7 @@ static int do_modprobe(int argc, char **orig_argv)
 	int do_show_config = 0;
 	int do_show_modversions = 0;
 	int do_show_exports = 0;
-	int err;
+	int err, c;
 	struct stat stat_buf;
 	bool use_syslog = false;
 
@@ -813,11 +814,8 @@ static int do_modprobe(int argc, char **orig_argv)
 		return EXIT_FAILURE;
 	}
 
-	for (;;) {
-		int c, idx = 0;
-		c = getopt_long(argc, argv, cmdopts_s, cmdopts, &idx);
-		if (c == -1)
-			break;
+	opterr = 0;
+	while ((c = getopt_long(argc, argv, cmdopts_s, cmdopts, NULL)) != -1) {
 		switch (c) {
 		case 'a':
 			log_priority = LOG_WARNING;
@@ -939,6 +937,8 @@ static int do_modprobe(int argc, char **orig_argv)
 			err = 0;
 			goto done;
 		case '?':
+			ERR("unrecognised option \'%s\'\n\n", argv[optind - 1]);
+			help();
 			err = -1;
 			goto done;
 		default:

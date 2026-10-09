@@ -1,12 +1,13 @@
 // SPDX-License-Identifier: LGPL-2.1-or-later
 /*
- * Copyright (C) 2011-2013  ProFUSION embedded systems
+ * Copyright (C) 2011-2013 ProFUSION embedded systems
  */
 
 #include <assert.h>
 #include <ctype.h>
 #include <dirent.h>
 #include <errno.h>
+#include <fcntl.h>
 #include <fnmatch.h>
 #include <inttypes.h>
 #include <limits.h>
@@ -736,12 +737,30 @@ static bool module_is_blacklisted(const struct kmod_module *mod)
 	return false;
 }
 
+static bool module_is_masked(const struct kmod_module *mod)
+{
+	const struct kmod_ctx *ctx = mod->ctx;
+	const struct kmod_config *config = kmod_get_config(ctx);
+	const struct kmod_list *bl = config->masks;
+	const struct kmod_list *l;
+
+	kmod_list_foreach(l, bl) {
+		const char *modname = kmod_mask_get_modname(l);
+
+		if (streq(modname, mod->name))
+			return true;
+	}
+
+	return false;
+}
+
 KMOD_EXPORT int kmod_module_apply_filter(const struct kmod_ctx *ctx,
 					 enum kmod_filter filter_type,
 					 const struct kmod_list *input,
 					 struct kmod_list **output)
 {
 	const struct kmod_list *li;
+	int err = 0;
 
 	if (ctx == NULL || output == NULL)
 		return -ENOENT;
@@ -760,9 +779,19 @@ KMOD_EXPORT int kmod_module_apply_filter(const struct kmod_ctx *ctx,
 		if ((filter_type & KMOD_FILTER_BUILTIN) && kmod_module_is_builtin(mod))
 			continue;
 
-		node = kmod_list_append(*output, mod);
-		if (node == NULL)
+		if ((filter_type & KMOD_FILTER_MASK) && module_is_masked(mod)) {
+			if (!mod->required)
+				continue;
+			ERR(mod->ctx, "module is masked: %s\n", kmod_module_get_name(mod));
+			err = -EINVAL;
 			goto fail;
+		}
+
+		node = kmod_list_append(*output, mod);
+		if (node == NULL) {
+			err = -ENOMEM;
+			goto fail;
+		}
 
 		*output = node;
 		kmod_module_ref(mod);
@@ -773,7 +802,7 @@ KMOD_EXPORT int kmod_module_apply_filter(const struct kmod_ctx *ctx,
 fail:
 	kmod_module_unref_list(*output);
 	*output = NULL;
-	return -ENOMEM;
+	return err;
 }
 
 static int command_do(struct kmod_module *mod, const char *type, const char *cmd)
@@ -1007,7 +1036,7 @@ KMOD_EXPORT int kmod_module_probe_insert_module(
 	const void *data,
 	void (*print_action)(struct kmod_module *m, bool install, const char *options))
 {
-	struct kmod_list *list = NULL, *l;
+	struct kmod_list *list = NULL, *l, *filtered = NULL;
 	struct probe_insert_cb cb;
 	int err;
 
@@ -1019,6 +1048,11 @@ KMOD_EXPORT int kmod_module_probe_insert_module(
 			return -EEXIST;
 		else
 			return 0;
+	}
+
+	if (module_is_masked(mod)) {
+		ERR(mod->ctx, "module is masked: %s\n", kmod_module_get_name(mod));
+		return -EINVAL;
 	}
 
 	if (module_is_blacklisted(mod)) {
@@ -1037,15 +1071,23 @@ KMOD_EXPORT int kmod_module_probe_insert_module(
 	if (err < 0)
 		return err;
 
-	if (flags & KMOD_PROBE_APPLY_BLACKLIST_ALL) {
-		struct kmod_list *filtered = NULL;
+	err = kmod_module_apply_filter(mod->ctx, KMOD_FILTER_MASK, list, &filtered);
+	kmod_module_unref_list(list);
+	if (err < 0)
+		return err;
 
+	if (filtered == NULL)
+		return -EINVAL;
+
+	list = filtered;
+
+	if (flags & KMOD_PROBE_APPLY_BLACKLIST_ALL) {
 		err = kmod_module_apply_filter(mod->ctx, KMOD_FILTER_BLACKLIST, list,
 					       &filtered);
+		kmod_module_unref_list(list);
 		if (err < 0)
 			return err;
 
-		kmod_module_unref_list(list);
 		if (filtered == NULL)
 			return KMOD_PROBE_APPLY_BLACKLIST_ALL;
 
@@ -1912,6 +1954,22 @@ KMOD_EXPORT int kmod_module_get_info(const struct kmod_module *mod,
 		n = kmod_module_info_append(list, key, keylen, value, valuelen);
 		if (n == NULL)
 			goto list_error;
+	}
+
+	if (mod->elf) {
+		const void *build_id;
+		size_t build_id_len;
+
+		if (kmod_elf_get_build_id(mod->elf, &build_id, &build_id_len) == 0) {
+			struct kmod_list *n;
+
+			n = kmod_module_info_append_hex(list, "build-id",
+							strlen("build-id"), build_id,
+							build_id_len);
+			if (n == NULL)
+				goto list_error;
+			count++;
+		}
 	}
 
 	if (mod->file && kmod_module_signature_info(mod->file, &sig_info)) {

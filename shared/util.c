@@ -1,8 +1,8 @@
 // SPDX-License-Identifier: LGPL-2.1-or-later
 /*
- * Copyright (C) 2011-2013  ProFUSION embedded systems
- * Copyright (C) 2012  Lucas De Marchi <lucas.de.marchi@gmail.com>
- * Copyright (C) 2013-2014  Intel Corporation. All rights reserved.
+ * Copyright (C) 2011-2013 ProFUSION embedded systems
+ * Copyright (C) 2012 Lucas De Marchi <demarchi@kernel.org>
+ * Copyright (C) 2013-2014 Intel Corporation. All rights reserved.
  */
 
 #include <assert.h>
@@ -84,7 +84,7 @@ int alias_normalize(const char *alias, char buf[static PATH_MAX], size_t *len)
 				i++;
 			}
 			if (i >= PATH_MAX - 1)
-                		return -EINVAL;
+				return -EINVAL;
 
 			if (alias[i] != ']')
 				return -EINVAL;

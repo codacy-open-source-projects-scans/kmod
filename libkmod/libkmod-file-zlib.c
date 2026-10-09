@@ -6,6 +6,7 @@
 #define DLSYM_LOCALLY_ENABLED ENABLE_ZLIB_DLOPEN
 
 #include <errno.h>
+#include <fcntl.h>
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
@@ -90,7 +91,7 @@ int kmod_file_load_zlib(struct kmod_file *file)
 			int gzerr;
 			const char *gz_errmsg = sym_gzerror(gzf, &gzerr);
 
-			ERR(file->ctx, "gzip: %s\n", gz_errmsg);
+			ERR(file->ctx, "zlib: %s\n", gz_errmsg);
 
 			/* gzip might not set errno here */
 			ret = gzerr == Z_ERRNO ? -errno : -EINVAL;

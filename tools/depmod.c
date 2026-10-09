@@ -1,7 +1,7 @@
 // SPDX-License-Identifier: GPL-2.0-or-later
 /*
- * Copyright (C) 2008  Alan Jenkins <alan-jenkins@tuffmail.co.uk>.
- * Copyright (C) 2011-2013  ProFUSION embedded systems
+ * Copyright (C) 2008 Alan Jenkins <alan-jenkins@tuffmail.co.uk>.
+ * Copyright (C) 2011-2013 ProFUSION embedded systems
  */
 
 #include <assert.h>
@@ -9,6 +9,7 @@
 #include <dirent.h>
 #include <endian.h>
 #include <errno.h>
+#include <fcntl.h>
 #include <getopt.h>
 #include <limits.h>
 #include <regex.h>
@@ -24,7 +25,7 @@
 #include <shared/hash.h>
 #include <shared/macro.h>
 #include <shared/strbuf.h>
-#include <shared/tmpfile-util.h>
+#include <shared/tmpfile.h>
 #include <shared/util.h>
 
 #include <libkmod/libkmod-internal.h>
@@ -52,22 +53,22 @@ static const char *const default_cfg_paths[] = {
 
 static const char cmdopts_s[] = "aAb:m:o:C:E:F:evnP:wVh";
 static const struct option cmdopts[] = {
-	{ "all", no_argument, 0, 'a' },
-	{ "quick", no_argument, 0, 'A' },
-	{ "basedir", required_argument, 0, 'b' },
-	{ "moduledir", required_argument, 0, 'm' },
-	{ "outdir", required_argument, 0, 'o' },
-	{ "config", required_argument, 0, 'C' },
-	{ "symvers", required_argument, 0, 'E' },
-	{ "filesyms", required_argument, 0, 'F' },
-	{ "errsyms", no_argument, 0, 'e' },
-	{ "verbose", no_argument, 0, 'v' },
-	{ "show", no_argument, 0, 'n' },
-	{ "dry-run", no_argument, 0, 'n' },
-	{ "symbol-prefix", required_argument, 0, 'P' },
-	{ "warn", no_argument, 0, 'w' },
-	{ "version", no_argument, 0, 'V' },
-	{ "help", no_argument, 0, 'h' },
+	{ "all", no_argument, NULL, 'a' },
+	{ "quick", no_argument, NULL, 'A' },
+	{ "basedir", required_argument, NULL, 'b' },
+	{ "moduledir", required_argument, NULL, 'm' },
+	{ "outdir", required_argument, NULL, 'o' },
+	{ "config", required_argument, NULL, 'C' },
+	{ "symvers", required_argument, NULL, 'E' },
+	{ "filesyms", required_argument, NULL, 'F' },
+	{ "errsyms", no_argument, NULL, 'e' },
+	{ "verbose", no_argument, NULL, 'v' },
+	{ "show", no_argument, NULL, 'n' },
+	{ "dry-run", no_argument, NULL, 'n' },
+	{ "symbol-prefix", required_argument, NULL, 'P' },
+	{ "warn", no_argument, NULL, 'w' },
+	{ "version", no_argument, NULL, 'V' },
+	{ "help", no_argument, NULL, 'h' },
 	{},
 };
 
@@ -2879,7 +2880,7 @@ static int is_version_number(const char *version)
 static int do_depmod(int argc, char *argv[])
 {
 	FILE *out = NULL;
-	int err = 0, all = 0, maybe_all = 0, n_config_paths = 0;
+	int c, err = 0, all = 0, maybe_all = 0, n_config_paths = 0;
 	_cleanup_free_ char *root_arg = NULL;
 	_cleanup_free_ char *out_root = NULL;
 	_cleanup_free_ const char **config_paths = NULL;
@@ -2896,11 +2897,8 @@ static int do_depmod(int argc, char *argv[])
 	memset(&cfg, 0, sizeof(cfg));
 	memset(&depmod, 0, sizeof(depmod));
 
-	for (;;) {
-		int c, idx = 0;
-		c = getopt_long(argc, argv, cmdopts_s, cmdopts, &idx);
-		if (c == -1)
-			break;
+	opterr = 0;
+	while ((c = getopt_long(argc, argv, cmdopts_s, cmdopts, NULL)) != -1) {
 		switch (c) {
 		case 'a':
 			all = 1;
@@ -2975,6 +2973,8 @@ static int do_depmod(int argc, char *argv[])
 			kmod_version();
 			return EXIT_SUCCESS;
 		case '?':
+			ERR("unrecognised option \'%s\'\n\n", argv[optind - 1]);
+			help();
 			goto cmdline_failed;
 		default:
 			ERR("unexpected getopt_long() value '%c'.\n", c);
